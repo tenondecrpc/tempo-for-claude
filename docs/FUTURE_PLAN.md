@@ -1,18 +1,44 @@
 # Claude Code Token Tracker — Apple Watch App
 
-**Architecture**: Claude Code Stop hook → iCloud Drive JSON file → iOS companion monitors file → WatchConnectivity → watchOS haptic + alert screen.
+**Architecture**: Two complementary data sources feed the watch:
+
+1. **Stop hook pipeline** (session events): Claude Code Stop hook → iCloud Drive JSON → iOS companion → WatchConnectivity → watchOS haptic + session sheet
+2. **OAuth API** (utilization ring): iOS polls `GET /api/oauth/usage` → WatchConnectivity → watchOS usage ring
+
+The hook alone cannot provide utilization % or reset timestamps — those require OAuth because the plan limit (5h/7d token ceiling) is account-specific and never exposed locally.
 
 ---
 
-## Execution Order (Recommended)
+## Data Sources
+
+Three distinct data sources — each with a different role. None replaces the others.
+
+| Source | Mechanism | What it provides | What it cannot provide |
+|---|---|---|---|
+| **Stop hook** | Event-driven (fires at session end) | Per-session tokens, cost, duration — at the exact moment the session closes | Utilization %, plan limits, reset timestamps |
+| **Claude Code local DB** (`~/.claude/`) | Polling / file watch | Full session history: 209 sessions, streaks, totals, model breakdown — same data `/stats` shows in the CLI | Real-time event trigger; plan limits |
+| **Anthropic OAuth API** | Polling (15 min) | `utilization5h`, `utilization7d`, `resetAt5h`, `resetAt7d` — relative to your specific plan limit | Per-session token counts; context window data |
+
+### Why the hook cannot be replaced by the local DB
+
+`/stats` and the local DB contain the same historical data the hook would capture. The critical difference is **event delivery**: the hook fires the instant a session ends, enabling an immediate haptic on the watch. Reading the local DB requires polling — you'd have to guess when to check, and you'd still need to diff against the previous state to detect a new session.
+
+### Why the local DB matters for Phase 8
+
+The local DB (`~/.claude/`) already contains the full session history (209 sessions, activity grid, model breakdown). Phase 8 (`StatsView`) can read this directly instead of building a custom history store from scratch via hooks. Confirm the exact file path and schema in Phase 0.
+
+---
+
+## Execution Order
 
 ```
-CORE PIPELINE:          0 → 1 → 2 → 3
-HIGH VALUE FEATURES:    4 → 5 → 6
-REAL DATA & QA:         7 → 8
+TRACK A — Usage ring (OAuth):     0 → 1 → 2
+TRACK B — Session haptics (hook): 0 → 3 → 4 → 5
+
+THEN:  6 (reset alarm) → 7 (QA) → 8 (stats) → 9 (context window)
 ```
 
-**Phases in order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8**
+**Track A and Track B share Phase 0. Run A before B — the watch infrastructure built in Phase 2 (WatchConnectivity + TokenStore updates) is reused by Track B.**
 
 ---
 
@@ -21,50 +47,109 @@ REAL DATA & QA:         7 → 8
 
 **Goal**: Verify exact APIs before writing any code. Deploy research subagents on:
 
-1. **Claude Code hooks** — read `~/.claude/settings.json` schema; identify what env vars the Stop hook receives (tokens, cost, session ID, limit window, reset timestamp, context usage, etc.)
-   - Source: `WebFetch` the Claude Code hooks docs
-   - Need: exact env var names for `input_tokens`, `output_tokens`, `cost_usd`, `limit_reset_at`, and **context window stats**
+1. **Anthropic OAuth API** — exact endpoints, PKCE flow, token refresh, rate limits
+   - Need: endpoint URL for usage data, response shape (`five_hour.utilization`, `five_hour.resets_at`, etc.), OAuth scopes required
+   - Source: WebFetch the Anthropic OAuth docs / inspect claude.ai network requests
 
-2. **WatchConnectivity** — `WCSession`, `sendMessage(_:replyHandler:)` vs `transferUserInfo(_:)`, activation states, background delivery
-   - Source: Apple Developer docs + any existing patterns in `.agents/skills/swiftui-expert-skill/references/`
+2. **Claude Code hooks** — exact env vars the Stop hook receives
+   - Need: `input_tokens`, `output_tokens`, `cost_usd`, session ID, any limit/reset data, context window stats
+   - Source: WebFetch the Claude Code hooks docs
 
-3. **NSMetadataQuery for iCloud** — how to watch for file changes in `~/Library/Mobile Documents/com~apple~CloudDocs/`
+3. **Claude Code local DB** — schema and file path of the session history database
+   - `/stats` command reads this; same data available to us directly
+   - Need: exact file path (`~/.claude/` — confirm subdirectory), format (SQLite? JSON?), session record schema
+   - Relevant for Phase 8 (StatsView) — avoids building a redundant history store
+
+4. **WatchConnectivity** — `WCSession`, `sendMessage` vs `transferUserInfo`, activation states, background delivery
+   - Source: Apple Developer docs + `.agents/skills/swiftui-expert-skill/references/`
+
+5. **NSMetadataQuery for iCloud** — watching file changes in `~/Library/Mobile Documents/com~apple~CloudDocs/`
    - Pattern: `NSMetadataQuery` with `NSMetadataQueryUbiquitousDocumentsScope`
 
-4. **WKHapticType (watchOS)** — exact enum cases: `.notification`, `.directionUp`, `.success`, etc.
+6. **WKHapticType (watchOS)** — enum cases: `.notification`, `.directionUp`, `.success`, etc.
    - Also: `WKInterfaceDevice.current().play(_:)`
 
-5. **Local notifications on watchOS** — `UNUserNotificationCenter` for the limit-reset alarm
+7. **Local notifications on watchOS** — `UNUserNotificationCenter` for the reset alarm
 
-**Output**: "Allowed APIs" doc saved as `/docs/APIS.md`
+**Output**: `/docs/APIS.md` with confirmed API signatures before any code is written.
 
 ---
 
-## Phase 1: Data Model + Claude Code Stop Hook
-**TIER 1 — The heart of the pipeline**
+## Phase 1: OAuth iOS — Real Utilization Data
+**TIER 1 — Track A / Makes the usage ring real**
+
+**Goal**: iOS authenticates with Anthropic, polls usage, sends real `UsageState` to watch. The mock badge disappears.
 
 **What to implement:**
 
-1. **`SessionData.swift`** (Shared) — Codable struct:
-   ```swift
-   struct SessionData: Codable, Identifiable {
-       let sessionId: String
-       let inputTokens: Int
-       let outputTokens: Int
-       let costUSD: Double
-       let durationSeconds: Int
-       let timestamp: Date
-       let limitResetAt: Date?
-       let isDoubleLimitActive: Bool
+1. **`AnthropicAPIClient.swift`** (iOS target) — OAuth PKCE client:
+   - Browser-based sign-in via `ASWebAuthenticationSession`
+   - Token storage in iOS Keychain (never `UserDefaults`)
+   - Auto-refresh 5 min before expiry
+   - Exponential backoff on 429 (up to 60-minute cap)
+   - Graceful logout on `invalid_grant` / 401
 
-       var id: String { sessionId }
-   }
-   ```
+2. **`UsageStatePoller.swift`** (iOS target):
+   - Polls `GET /api/oauth/usage` every 15 minutes
+   - Maps response → `UsageState` (confirmed field names from Phase 0)
+   - Reset-timestamp reconciliation: preserve previous value if server omits it; detect rollover when utilization drops
+
+3. **`WatchRelayManager.swift`** (iOS target) — initial version, `UsageState` only:
+   - `WCSession.default.activate()`
+   - Encodes `UsageState` as `[String: Any]` via `transferUserInfo(_:)`
+
+4. **Wire to iOS app launch** — start poller on `applicationDidBecomeActive`
+
+**Verification checklist:**
+- Sign in via OAuth → credentials in Keychain
+- Poll fires → `UsageState` printed to console with real values
+- `transferUserInfo` delivers payload to watch simulator
+
+**Anti-pattern guards:**
+- Do NOT store OAuth tokens in `UserDefaults`
+- Do NOT poll more than every 15 minutes
+- Do NOT show the ring as real until `isMocked == false`
+
+---
+
+## Phase 2: watchOS Receives UsageState — Ring Goes Live
+**TIER 1 — Track A / Watch shows real data for the first time**
+
+**Goal**: Watch receives `UsageState` from iOS, updates `TokenStore`, ring shows real utilization %, mock badge disappears.
+
+**What to implement:**
+
+1. **`WatchSessionReceiver.swift`** (Watch Extension) — `WCSessionDelegate`:
+   - `session(_:didReceiveUserInfo:)` → decode payload type (UsageState vs SessionInfo)
+   - On `UsageState`: update `TokenStore.usageState`, set `isMocked = false`
+
+2. **`TokenStore` update** — add `func apply(_ state: UsageState)`:
+   - Sets `usageState = state`
+   - Called by `WatchSessionReceiver`
+
+3. **Wire receiver to app entry point** — `WatchSessionReceiver` activated on watch app launch
+
+**Verification checklist:**
+- Run Phase 1 iOS → watch simulator shows real % (not 42%)
+- Mock badge disappears from watch face
+- Countdown shows correct real reset time
+
+---
+
+## Phase 3: Stop Hook — Session Events on Mac
+**TIER 1 — Track B / Captures per-session data**
+
+**Goal**: Every time a Claude Code session ends, a JSON file lands in iCloud with tokens, cost, and session ID.
+
+**What to implement:**
+
+1. **`SessionInfo`** (already in `Shared/Models.swift`) — verify fields match hook env vars confirmed in Phase 0
 
 2. **Stop hook shell script** at `~/.claude/hooks/stop-tracker.sh`:
-   - Reads env vars provided by Claude Code — exact names confirmed in Phase 0
+   - Reads env vars from Claude Code (exact names from Phase 0)
    - Writes JSON to `~/Library/Mobile Documents/com~apple~CloudDocs/ClaudeTracker/latest.json`
-   - Creates the iCloud directory if it doesn't exist
+   - Creates directory if missing
+   - `chmod +x` required
 
 3. **Register the hook** in `~/.claude/settings.json`:
    ```json
@@ -73,121 +158,107 @@ REAL DATA & QA:         7 → 8
 
 **Verification checklist:**
 - Run `echo $CLAUDE_INPUT_TOKENS` inside a test hook to confirm var names
-- Manually trigger hook: check `~/Library/Mobile Documents/com~apple~CloudDocs/ClaudeTracker/latest.json` appears
-- Validate JSON parses into `SessionData`
+- End a real Claude Code session → check `latest.json` appears in iCloud folder
+- Validate JSON parses into `SessionInfo`
 
 ---
 
-## Phase 2: iOS Companion App — iCloud Monitor + WatchConnectivity
-**TIER 1 — The bridge between Mac and Watch**
+## Phase 4: iOS iCloud Monitor → Relay SessionInfo to Watch
+**TIER 1 — Track B / Bridge between Mac and Watch**
+
+**Goal**: iOS detects new `latest.json` in iCloud and forwards `SessionInfo` to the watch via `WatchRelayManager`.
 
 **What to implement:**
 
-1. **`iCloudMonitor.swift`** — watches for `latest.json` changes using `NSMetadataQuery`:
-   - On file change → decode `SessionData` → call `WatchRelayManager.send(_:)`
-   - Handles first-launch activation and background refresh
+1. **`iCloudMonitor.swift`** (iOS target):
+   - `NSMetadataQuery` watching `~/Library/Mobile Documents/com~apple~CloudDocs/ClaudeTracker/latest.json`
+   - On change → decode `SessionInfo` → call `WatchRelayManager.sendSession(_:)`
 
-2. **`WatchRelayManager.swift`** — `WCSession` sender for iOS:
-   - `WCSession.default.activate()`
+2. **`WatchRelayManager` update** — add `sendSession(_ session: SessionInfo)`:
+   - Encodes `SessionInfo` as `[String: Any]` with a type discriminator key (e.g. `"type": "session"`)
    - Uses `transferUserInfo(_:)` (reliable background delivery)
-   - Encodes `SessionData` as `[String: Any]` dictionary
 
-3. **`claude_tracker_applewatchApp.swift`** (iOS target) — start monitor on launch
+3. **Wire to iOS app launch** — `iCloudMonitor.start()` alongside the poller
 
 **Files:**
 ```
 ClaudeTracker/
 ├── iCloudMonitor.swift
-└── WatchRelayManager.swift
+└── WatchRelayManager.swift   ← extended from Phase 1
 ```
 
 **Verification checklist:**
-- Drop a valid `latest.json` into iCloud folder manually → confirm `iCloudMonitor` fires
-- Confirm `WCSession` delivers `userInfo` to simulator watch
+- Drop a valid `latest.json` into the iCloud folder manually → `iCloudMonitor` fires
+- Confirm `WCSession` delivers `userInfo` to watch simulator with `"type": "session"`
 
 ---
 
-## Phase 3: watchOS Core — Receive + Haptic + Dashboard
-**TIER 1 — Where the magic happens**
+## Phase 5: watchOS Session Receive — Haptic + CompletionView
+**TIER 1 — Track B / The haptic magic**
+
+**Goal**: Watch receives `SessionInfo`, plays haptic, presents `CompletionView`.
 
 **What to implement:**
 
-1. **`WatchSessionReceiver.swift`** — `WCSessionDelegate` for watchOS:
-   - `session(_:didReceiveUserInfo:)` → decode → publish via `@Observable` `TokenStore`
-   - Triggers haptic: `WKInterfaceDevice.current().play(.notification)`
+1. **`WatchSessionReceiver` update** (from Phase 2):
+   - On `SessionInfo` payload: play haptic + set `TokenStore.pendingCompletion`
+   - `WKInterfaceDevice.current().play(.notification)`
 
-2. **`TokenStore.swift`** + **`UsageState.swift`** (Shared) — `@Observable` data store:
-   ```swift
-   @Observable @MainActor
-   final class TokenStore {
-       private(set) var sessions: [SessionData] = []
-       var pendingCompletion: SessionData? = nil
-       private(set) var usageState: UsageState = .mock
-   }
-
-   struct UsageState: Codable {
-       var utilization5h: Double   // 0.0–1.0
-       var utilization7d: Double
-       var resetAt5h: Date
-       var resetAt7d: Date
-       var isMocked: Bool
-
-       static var mock: UsageState {
-           UsageState(
-               utilization5h: 0.42,
-               utilization7d: 0.18,
-               resetAt5h: Date().addingTimeInterval(2 * 3600 + 13 * 60),
-               resetAt7d: Date().addingTimeInterval(4 * 24 * 3600),
-               isMocked: true
-           )
-       }
-   }
-   ```
-
-3. **Dashboard UI** — `ContentView.swift`:
-   - Usage ring (`utilization5h`) with mock badge
-   - Reset countdown ("2hr 13min left")
-   - Secondary 7-day indicator
-   - `.sheet(item: $store.pendingCompletion)` → `CompletionView`
-
-4. **`CompletionView.swift`** — session completion alert showing tokens + cost
+2. **`TokenStore` update** — `pendingCompletion` already exists; just confirm it's set from the receiver
 
 **Verification checklist:**
-- Send mock `SessionData` from iOS simulator → watch shows haptic + `CompletionView` appears
-- `pendingCompletion` clears after dismissal
-- Countdown shows correct time remaining
+- End a real Claude Code session → watch vibrates + `CompletionView` appears with correct tokens + cost
+- Dismiss sheet → `pendingCompletion` clears
+- Subsequent session → sheet reappears correctly
 
 ---
 
-## Phase 4: Limit Reset Alarm
+## Phase 6: Limit Reset Alarm
 **TIER 2 — Most-requested feature**
 
-**What to implement:**
+**Goal**: Watch fires a strong haptic + notification at the exact moment the 5h limit resets.
 
-**`ResetAlarmManager.swift`** — schedules a local notification + strong haptic when the limit window resets:
-- `UNUserNotificationCenter` — schedule notification at `limitResetAt`
-- On trigger: `WKInterfaceDevice.current().play(.notification)` (strongest haptic)
-- Reschedules automatically when a new `SessionData` arrives
+**`ResetAlarmManager.swift`** (Watch Extension):
+- `UNUserNotificationCenter` — schedule notification at `TokenStore.usageState.resetAt5h`
+- On trigger: `WKInterfaceDevice.current().play(.notification)`
+- Reschedules automatically when `usageState` updates (i.e. every 15-min OAuth poll)
 
-**Why this phase matters**: Users want to know the exact moment they can resume full usage — not just track what they've used.
+**Note**: This phase is trivially correct only after Phase 1–2, because `resetAt5h` is a real timestamp from the OAuth API.
 
 **Verification checklist:**
-- Schedule alarm 30 seconds in the future → confirm notification fires + haptic plays
-- Confirm alarm reschedules when `limitResetAt` changes
+- Schedule alarm 30 seconds in the future → notification fires + haptic plays
+- Update `usageState` with new reset time → alarm reschedules
 
 ---
 
-## Phase 5: Stats Dashboard + Complications
-**TIER 2 — Dashboard & visibility**
+## Phase 7: Final Verification & QA
+**TIER 2 — Before declaring MVP done**
 
-**What to implement:**
+**End-to-end test sequence:**
+1. Fresh install → OAuth sign-in → watch shows real ring
+2. End a Claude Code session → hook fires → JSON in iCloud → iOS relays → watch shows haptic + `CompletionView`
+3. Wait for limit reset → alarm fires on watch at correct time
+
+**Code health checklist:**
+- Grep for deprecated APIs: `foregroundColor`, `NavigationView`, `ObservableObject`
+- Verify `@State` is always `private`
+- Verify no `sendMessage` (use `transferUserInfo` for reliability)
+- Verify hook script has `chmod +x`
+- Verify `Shared/Models.swift` is correctly linked to all targets
+
+---
+
+## Phase 8: Stats Dashboard + Complications
+**TIER 2 — Visibility & glanceability**
+
+**Data source for history**: Claude Code already stores full session history in `~/.claude/` (the same data `/stats` shows in the CLI — 209 sessions, activity grid, model breakdown). Read this directly instead of building a redundant history store from Stop hook events. Schema confirmed in Phase 0.
 
 1. **`StatsView.swift`** — scrollable list of past sessions with token bars
 
 2. **`TokenComplication.swift`** — Watch face complication:
    - Graphic corner: usage % + countdown to reset
    - Circular: usage percentage
-   - Uses `WidgetKit` (watchOS supported families only)
+   - Uses `WidgetKit` (watchOS supported families)
 
 3. **`ComplicationProvider.swift`** — `TimelineProvider` reading from App Group `UserDefaults`
 
@@ -197,76 +268,16 @@ ClaudeTracker/
 
 ---
 
-## Phase 6: Final Verification & QA
-**TIER 2 — Before declaring MVP done**
-
-**Checklist:**
-
-- End-to-end test: run a real Claude Code session → hook fires → JSON in iCloud → iOS relays → watch shows haptic + dashboard updates
-- Confirm reset countdown is accurate and alarm fires at the right time
-- Confirm 2x indicator appears/disappears correctly
-- Grep for deprecated APIs: `foregroundColor`, `NavigationView`, `ObservableObject`
-- Verify `@State` is always `private`
-- Verify no `sendMessage` (use `transferUserInfo` for reliability)
-- Confirm hook script has `chmod +x` and runs without errors
-- Verify shared files (`Shared/Models.swift`, etc.) are in correct targets via Xcode target membership
-
----
-
-## Phase 7: Real Usage Ring — Anthropic OAuth API
-**TIER 3 — Real data replaces mock**
-
-**Context**: Phases 0–6 build the full MVP using `UsageState.mock`. This phase replaces the mock with real data from the Anthropic OAuth API.
-
-**Why deferred**: OAuth PKCE adds iOS complexity. Building against a mock first lets the core pipeline and all features stabilize.
-
-**What the API provides:**
-- `GET /api/oauth/usage` → `five_hour.utilization`, `five_hour.resets_at`, `seven_day.utilization`, `seven_day.resets_at`
-- Auth: OAuth 2.0 PKCE. Token storage in iOS Keychain.
-
-**What to implement:**
-
-1. **`AnthropicAPIClient.swift`** (iOS target) — OAuth PKCE client:
-   - Browser-based sign-in via `ASWebAuthenticationSession`
-   - Token storage in iOS Keychain
-   - Auto-refresh 5 min before expiry
-   - Exponential backoff on 429 (up to 60-minute cap)
-   - Graceful logout on `invalid_grant` / 401
-
-2. **`UsageStatePoller.swift`** (iOS target) — polls `/api/oauth/usage`:
-   - 15-minute default interval
-   - Reset-timestamp reconciliation (preserve, detect rollover, trust server)
-   - Relay to watch via `transferUserInfo`
-
-3. **`TokenStore` update** — set `usageState.isMocked = false` once first real poll succeeds
-
-4. **`ResetAlarmManager` update** — no changes needed (already reads `resetAt5h`)
-
-**Verification checklist:**
-- Sign in via OAuth → credentials stored in Keychain
-- Poll fires → mock badge disappears from watch
-- Simulate 429 → backoff increases correctly
-- Simulate server dropping `resets_at` → previous value preserved
-- Simulate utilization drop → reset time advances by 5h
-- Revoke token → graceful logout, mock badge reappears
-
-**Anti-pattern guards:**
-- Do NOT store OAuth tokens in UserDefaults — use Keychain
-- Do NOT poll more than every 15 minutes
-- Do NOT show the ring as "real" until `isMocked == false`
-
----
-
-## Phase 8: Context Window Tracking
-**TIER 3 — Additional high-value feature**
+## Phase 9: Context Window Tracking
+**TIER 3 — High-value addition**
 
 **Goal**: Show context window fullness on the watch with haptic alerts at thresholds.
+
+**Data source**: Claude Code hooks (Stop hook env vars — confirm exact names in Phase 0).
 
 **What the data looks like:**
 ```
 Total:        50k / 200k tokens (25%)
-
-By category:
   System prompt:      6.3k  (3.1%)
   System tools:       7.6k  (3.8%)
   Memory files:         205  (0.1%)
@@ -274,10 +285,6 @@ By category:
   Messages:          35.4k (17.7%)
   Free space:         116k (58.2%)
 ```
-
-**Why this matters**: Context exhaustion silently degrades response quality. A glanceable gauge on the wrist lets the user act before it becomes a problem.
-
-**Data source**: Claude Code hooks (confirm in Phase 0 which hook exposes context stats).
 
 **What to implement:**
 
@@ -301,84 +308,72 @@ By category:
    }
    ```
 
-2. **Stop hook extension** — extend `stop-tracker.sh` to write `context.json` in iCloud
+2. **Stop hook extension** — extend `stop-tracker.sh` to also write `context.json` to iCloud
 
-3. **iOS companion update** — `iCloudMonitor` watches `context.json` and relays `ContextState` to watch
+3. **iOS companion update** — `iCloudMonitor` watches `context.json`, relays `ContextState` via `WatchRelayManager`
 
-4. **watchOS dashboard update** — `TokenStore` gains `contextState: ContextState?`. `ContentView` shows context gauge.
+4. **watchOS dashboard update** — `TokenStore` gains `contextState: ContextState?`; `ContentView` shows context gauge
 
-5. **Threshold alerts** — configurable thresholds (default: warn 70%, critical 90%):
-   - Warn: yellow indicator + `.notification` haptic
-   - Critical: red indicator + stronger haptic
-   - Fires only on upward crossing (not repeatedly)
-
-**Anti-pattern guards:**
-- Only fire alert on threshold crossing, not on every hook call
-- Discard context data if older than 10 minutes
-- Confirm exact env var names in Phase 0
+5. **Threshold alerts** — configurable (default: warn 70%, critical 90%):
+   - Fire only on upward threshold crossing, not on every hook call
+   - Discard context data older than 10 minutes
 
 ---
 
 ## Future: Windows / Cross-Platform Support
 **Out of scope for now**
 
-The current architecture uses iCloud as the transport layer (Mac-only). To support Windows in the future, replace iCloud with an **HTTP relay**:
+The current architecture uses iCloud as the transport layer (Mac-only). To support Windows, replace iCloud with an HTTP relay:
 
 ```
 Stop hook (any OS) → curl POST to relay → iOS app (polling/WebSocket) → WatchConnectivity → watch
 ```
 
-**Relay options:**
-- **ntfy.sh** — zero backend, simple, data goes to public server
-- **Supabase Realtime** — free tier, real-time iOS SDK
-- **Cloudflare Worker + KV** — cheap, fast, requires deploy
+**Relay options:** ntfy.sh (zero backend), Supabase Realtime (free tier), Cloudflare Worker + KV
 
-**What changes:**
-- `stop-tracker.sh` → add `curl -X POST` to configurable endpoint
-- `iCloudMonitor.swift` → replace `NSMetadataQuery` with polling/WebSocket
-
-**What does NOT change:** `SessionData` model, WatchConnectivity relay, all watchOS code.
+**What changes:** `stop-tracker.sh` + `iCloudMonitor.swift`
+**What does NOT change:** `SessionInfo` model, WatchConnectivity relay, all watchOS code.
 
 ---
 
-## Reference: claude-usage-bar (Blimp-Labs)
+## Reference Apps
+
+### Usage for Claude (Amir Hayek)
+macOS menu bar + iOS companion app. Requires sign-in to Claude account via OAuth. Fetches utilization data from the Anthropic OAuth API, saves locally, and syncs to iCloud for the iOS companion. The iCloud sync is a cache — the authoritative data source is always the API.
+
+### claude-usage-bar (Blimp-Labs)
 
 **Repo**: https://github.com/Blimp-Labs/claude-usage-bar
 
 **What it is**: macOS menu bar app showing real-time Claude API utilization via the Anthropic OAuth API.
 
-### How It Works
+### How the OAuth API works
 
-- **Auth**: OAuth via browser — no manual API keys. User signs in with their Claude account in the browser, gets a token, and the app uses it to query Anthropic's usage endpoints.
-- **Endpoints**: Calls the same internal/non-public endpoints that claude.ai itself uses to show usage on the web settings page (`Configuración > Uso`). These are NOT part of the public Anthropic API.
-- **Polling**: Queries every 60 seconds for fresh data.
-- **Data shown**: 5-hour session utilization %, 7-day weekly limit %, reset countdowns, and historical usage chart (1h/6h/1d/7d/30d).
+- **Auth**: OAuth via browser — no manual API keys. User signs in with their Claude account, gets a token, app uses it to query Anthropic's usage endpoints.
+- **Endpoints**: Same internal endpoints that claude.ai uses to show usage on the web settings page. Not part of the public Anthropic API.
+- **Polling**: Every 60 seconds (claude-usage-bar) / 15 minutes (our target).
+- **Data**: 5-hour session utilization %, 7-day weekly limit %, reset countdowns.
 
-### OAuth vs Hooks/Screen Time — Real-World Comparison (2026-03-27)
-
-Two competing approaches were compared side-by-side against claude.ai as ground truth:
+### Real-World Accuracy Comparison (2026-03-27)
 
 | Source | 5h Usage | 7d Usage | Freshness |
 |---|---|---|---|
 | **claude.ai web** (ground truth) | 79% | 33% | "just now" |
-| **claude-usage-bar** (OAuth API) | 79% | 33% | "Updated 2 min, 21 sec ago" |
-| **Usage for Claude** (hooks/screen time + iCloud) | 24% | 29% | "1 hour ago" |
+| **claude-usage-bar** (OAuth API) | 79% | 33% | "2 min, 21 sec ago" |
+| **Usage for Claude** (OAuth API, same mechanism) | 24% | 29% | "1 hour ago" |
 
-**Takeaway**: The OAuth-based app matches claude.ai exactly in real time. The hooks/screen-time-based app had stale data (1 hour behind) — likely a bug or polling issue, but it highlights the fundamental reliability advantage of querying the authoritative API directly rather than estimating from hook events or screen time scraping.
+**Takeaway**: Both OAuth-based apps query the same Anthropic endpoints. "Usage for Claude" showed stale data (1 hour behind) — likely a polling interval or caching issue in that app, not a fundamental limitation of the OAuth approach. Both approaches are superior to any hook-based estimation for utilization data.
 
 ### Key Patterns Worth Adopting
 
-1. **OAuth API as authoritative source** — more reliable than estimating from hook data; matches claude.ai exactly
-2. **Reset timestamp reconciliation** — preserve, detect rollover, trust server
+1. **OAuth API as authoritative source** — matches claude.ai exactly; hook data cannot compute utilization %
+2. **Reset timestamp reconciliation** — preserve previous value if server omits it; detect rollover when utilization drops
 3. **Threshold-crossing detection** — fire only on upward transition, avoid alert fatigue
 4. **Exponential backoff on 429** — smart rate-limit handling
 5. **7-day window + extra usage** — track both free and paid credits
-6. **Per-model breakdown** — Opus vs Sonnet utilization
-
-These patterns integrate cleanly into the roadmap and should be adopted in Phases 2, 4, 7.
+6. **Per-model breakdown** — Opus vs Sonnet utilization (future)
 
 ### Implication for ClaudeTracker
 
-Phase 7 (Anthropic OAuth API) is critical for data accuracy. The hook-based pipeline (Phases 1–3) provides session-level events (tokens, cost, haptics on completion), but for **usage ring accuracy**, the OAuth API is the only reliable source. The two approaches are complementary:
-- **Hooks** → real-time session completion alerts + per-session token/cost data
-- **OAuth API** → authoritative utilization % and reset timestamps for the usage ring
+- **OAuth API** (Phases 1–2) → authoritative utilization % and reset timestamps for the usage ring
+- **Stop hook** (Phases 3–5) → unique value: real-time haptic on session completion + per-session token/cost breakdown that no polling-based app can match
