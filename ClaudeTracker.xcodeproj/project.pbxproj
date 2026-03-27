@@ -6,8 +6,38 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7731EEF92F76AD3900C84A59 /* ClaudeTracker Watch Extension.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 7731EEF82F76AD3900C84A59 /* ClaudeTracker Watch Extension.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7731EEFA2F76AD3900C84A59 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7731EED22F76AD1800C84A59 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7731EEF72F76AD3900C84A59;
+			remoteInfo = "Claude Tracker Watch Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7731EF062F76AD3A00C84A59 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				7731EEF92F76AD3900C84A59 /* ClaudeTracker Watch Extension.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		7731EEDA2F76AD1800C84A59 /* ClaudeTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClaudeTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7731EEEC2F76AD3700C84A59 /* ClaudeTracker Watch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ClaudeTracker Watch.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		7731EEF82F76AD3900C84A59 /* ClaudeTracker Watch Extension.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ClaudeTracker Watch Extension.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +46,34 @@
 			path = ClaudeTracker;
 			sourceTree = "<group>";
 		};
+		7731EEED2F76AD3700C84A59 /* ClaudeTracker Watch */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "ClaudeTracker Watch";
+			sourceTree = "<group>";
+		};
+		7731EEFC2F76AD3900C84A59 /* ClaudeTracker Watch Extension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "ClaudeTracker Watch Extension";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		7731EED72F76AD1800C84A59 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7731EEE92F76AD3700C84A59 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7731EEF52F76AD3900C84A59 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +87,8 @@
 			isa = PBXGroup;
 			children = (
 				7731EEDC2F76AD1800C84A59 /* ClaudeTracker */,
+				7731EEED2F76AD3700C84A59 /* ClaudeTracker Watch */,
+				7731EEFC2F76AD3900C84A59 /* ClaudeTracker Watch Extension */,
 				7731EEDB2F76AD1800C84A59 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +97,8 @@
 			isa = PBXGroup;
 			children = (
 				7731EEDA2F76AD1800C84A59 /* ClaudeTracker.app */,
+				7731EEEC2F76AD3700C84A59 /* ClaudeTracker Watch.app */,
+				7731EEF82F76AD3900C84A59 /* ClaudeTracker Watch Extension.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,6 +128,52 @@
 			productReference = 7731EEDA2F76AD1800C84A59 /* ClaudeTracker.app */;
 			productType = "com.apple.product-type.application";
 		};
+		7731EEEB2F76AD3700C84A59 /* ClaudeTracker Watch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7731EF072F76AD3A00C84A59 /* Build configuration list for PBXNativeTarget "ClaudeTracker Watch" */;
+			buildPhases = (
+				7731EEE82F76AD3700C84A59 /* Sources */,
+				7731EEE92F76AD3700C84A59 /* Frameworks */,
+				7731EEEA2F76AD3700C84A59 /* Resources */,
+				7731EF062F76AD3A00C84A59 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7731EEFB2F76AD3900C84A59 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				7731EEED2F76AD3700C84A59 /* ClaudeTracker Watch */,
+			);
+			name = "ClaudeTracker Watch";
+			packageProductDependencies = (
+			);
+			productName = "Claude Tracker Watch";
+			productReference = 7731EEEC2F76AD3700C84A59 /* ClaudeTracker Watch.app */;
+			productType = "com.apple.product-type.application";
+		};
+		7731EEF72F76AD3900C84A59 /* ClaudeTracker Watch Extension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7731EF032F76AD3A00C84A59 /* Build configuration list for PBXNativeTarget "ClaudeTracker Watch Extension" */;
+			buildPhases = (
+				7731EEF42F76AD3900C84A59 /* Sources */,
+				7731EEF52F76AD3900C84A59 /* Frameworks */,
+				7731EEF62F76AD3900C84A59 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7731EEFC2F76AD3900C84A59 /* ClaudeTracker Watch Extension */,
+			);
+			name = "ClaudeTracker Watch Extension";
+			packageProductDependencies = (
+			);
+			productName = "Claude Tracker Watch Watch App";
+			productReference = 7731EEF82F76AD3900C84A59 /* ClaudeTracker Watch Extension.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -81,6 +185,12 @@
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					7731EED92F76AD1800C84A59 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+					7731EEEB2F76AD3700C84A59 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+					7731EEF72F76AD3900C84A59 = {
 						CreatedOnToolsVersion = 26.4;
 					};
 				};
@@ -100,12 +210,28 @@
 			projectRoot = "";
 			targets = (
 				7731EED92F76AD1800C84A59 /* ClaudeTracker */,
+				7731EEEB2F76AD3700C84A59 /* ClaudeTracker Watch */,
+				7731EEF72F76AD3900C84A59 /* ClaudeTracker Watch Extension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		7731EED82F76AD1800C84A59 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7731EEEA2F76AD3700C84A59 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7731EEF62F76AD3900C84A59 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +248,29 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7731EEE82F76AD3700C84A59 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7731EEF42F76AD3900C84A59 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		7731EEFB2F76AD3900C84A59 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7731EEF72F76AD3900C84A59 /* ClaudeTracker Watch Extension */;
+			targetProxy = 7731EEFA2F76AD3900C84A59 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		7731EEE32F76AD1900C84A59 /* Debug */ = {
@@ -323,6 +471,140 @@
 			};
 			name = Release;
 		};
+		7731EF042F76AD3A00C84A59 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Claude Tracker Watch";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "tenondevcloud.Claude-Tracker-Watch";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tenondevcloud.Claude-Tracker-Watch.watchkitapp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Debug;
+		};
+		7731EF052F76AD3A00C84A59 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Claude Tracker Watch";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "tenondevcloud.Claude-Tracker-Watch";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tenondevcloud.Claude-Tracker-Watch.watchkitapp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 26.4;
+			};
+			name = Release;
+		};
+		7731EF082F76AD3A00C84A59 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Claude Tracker Watch";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tenondevcloud.Claude-Tracker-Watch";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7731EF092F76AD3A00C84A59 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Claude Tracker Watch";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "tenondevcloud.Claude-Tracker-Watch";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -340,6 +622,24 @@
 			buildConfigurations = (
 				7731EEE62F76AD1900C84A59 /* Debug */,
 				7731EEE72F76AD1900C84A59 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7731EF032F76AD3A00C84A59 /* Build configuration list for PBXNativeTarget "ClaudeTracker Watch Extension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7731EF042F76AD3A00C84A59 /* Debug */,
+				7731EF052F76AD3A00C84A59 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7731EF072F76AD3A00C84A59 /* Build configuration list for PBXNativeTarget "ClaudeTracker Watch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7731EF082F76AD3A00C84A59 /* Debug */,
+				7731EF092F76AD3A00C84A59 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
