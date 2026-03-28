@@ -7,11 +7,14 @@ import Foundation
 final class UsagePoller {
 
     var lastPollAt: Date?
+    var latestUsage: UsageState?
+    var lastPollError: String?
+    var isPolling = false
 
     private let client: MacOSAPIClient
     private var timer: Timer?
     private var isRunning = false
-    private var currentInterval: TimeInterval = 900  // 15 minutes
+    private var currentInterval: TimeInterval = 1800  // 30 minutes
 
     // Reset-timestamp reconciliation state
     private var lastResetAt5h: Date?
@@ -35,15 +38,19 @@ final class UsagePoller {
     func start() {
         stop()
         isRunning = true
-        currentInterval = 900
+        currentInterval = 1800
         Task { [weak self] in await self?.immediatePoll() }
-        scheduleTimer(interval: 900)
+        scheduleTimer(interval: 1800)
     }
 
     func stop() {
         isRunning = false
         timer?.invalidate()
         timer = nil
+    }
+
+    func pollNow() {
+        Task { [weak self] in await self?.doPoll() }
     }
 
     // MARK: - Scheduling
@@ -68,18 +75,26 @@ final class UsagePoller {
     // MARK: - Core Poll
 
     private func doPoll() async {
+        isPolling = true
+        defer { isPolling = false }
         do {
             let state = try await fetchUsage()
             currentInterval = 900
             lastPollAt = Date()
+            lastPollError = nil
+            latestUsage = state
             try writeToiCloud(state)
             onUsageState?(state)
         } catch MacAuthError.rateLimited(let retryAfter) {
-            // Exponential backoff capped at 1 hour (Task 3.4)
             let backoff = min(max(retryAfter ?? currentInterval, currentInterval * 2), 3600)
             currentInterval = backoff
+            lastPollError = "Rate limited — retrying in \(Int(backoff / 60)) min"
+        } catch MacAuthError.httpError(let code) {
+            lastPollError = "API error (\(code))"
+        } catch MacAuthError.noToken {
+            lastPollError = "Not authenticated"
         } catch {
-            // Non-fatal: keep current interval
+            lastPollError = error.localizedDescription
         }
     }
 

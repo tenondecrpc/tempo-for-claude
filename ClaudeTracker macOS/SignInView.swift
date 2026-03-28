@@ -3,114 +3,78 @@ import SwiftUI
 // MARK: - MacMenuView (top-level switcher)
 
 struct MacMenuView: View {
-    @Bindable var coordinator: MacAppCoordinator
+    let coordinator: MacAppCoordinator
 
     var body: some View {
         if coordinator.authState.isAuthenticated {
-            AuthenticatedView(coordinator: coordinator)
+            AuthenticatedMenuView(coordinator: coordinator)
         } else {
-            SignInView(coordinator: coordinator)
+            NotSignedInMenuView(coordinator: coordinator)
         }
     }
 }
 
-// MARK: - SignInView
+// MARK: - NotSignedInMenuView
 
-struct SignInView: View {
-    @Bindable var coordinator: MacAppCoordinator
-
-    @State private var pastedCode = ""
-    @State private var isSubmitting = false
-    @State private var signInError: String?
+struct NotSignedInMenuView: View {
+    let coordinator: MacAppCoordinator
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        if coordinator.authState.isAwaitingCode {
-            codeEntryView
-        } else {
-            signInPromptView
-        }
-    }
+        VStack(spacing: 0) {
+            MenuBarHeaderView()
 
-    // MARK: - Sign-in Prompt
+            VStack(spacing: 16) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(ClaudeTheme.lockIcon)
+                    .padding(.top, 24)
 
-    private var signInPromptView: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 36))
-                .foregroundStyle(.tint)
-            Text("Claude Tracker")
-                .font(.headline)
-            Text("Sign in to sync Claude usage to your Apple Watch.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            if let error = signInError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
+                VStack(spacing: 6) {
+                    Text("Not Signed In")
+                        .font(.headline)
+                        .foregroundStyle(ClaudeTheme.textPrimary)
+                    Text("Sign in to view your Claude Usage")
+                        .font(.caption)
+                        .foregroundStyle(ClaudeTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 16)
+
+                Button {
+                    NSApp.keyWindow?.close()   // cierra el panel antes de abrir la welcome
+                    openWindow(id: "welcome")
+                } label: {
+                    Text("Sign In")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .background(ClaudeTheme.accent)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
             }
-            Button("Sign in with Claude") {
-                signInError = nil
-                coordinator.client.startOAuthFlow()
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .frame(maxWidth: .infinity)
-        }
-        .padding()
-    }
 
-    // MARK: - Code Entry
+            Divider()
+                .overlay(ClaudeTheme.progressTrack)
 
-    private var codeEntryView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "doc.on.clipboard")
-                .font(.system(size: 28))
-                .foregroundStyle(.tint)
-            Text("Paste Authorization Code")
-                .font(.headline)
-            Text("After authorizing in the browser, paste the code shown on screen.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            TextField("code#state", text: $pastedCode)
-                .textFieldStyle(.roundedBorder)
-            if let error = signInError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-            }
             HStack {
-                Button("Cancel") {
-                    pastedCode = ""
-                    signInError = nil
-                    coordinator.authState.isAwaitingCode = false
+                Button("Quit") {
+                    NSApplication.shared.terminate(nil)
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(ClaudeTheme.destructive)
+                .font(.caption)
                 Spacer()
-                Button("Submit") {
-                    Task { await submitCode() }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(pastedCode.isEmpty || isSubmitting)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
         }
-        .padding()
-    }
-
-    // MARK: - Submit
-
-    private func submitCode() async {
-        isSubmitting = true
-        signInError = nil
-        defer { isSubmitting = false }
-        do {
-            try await coordinator.client.submitOAuthCode(pastedCode)
-            pastedCode = ""
-            coordinator.onAuthenticated()
-        } catch {
-            signInError = error.localizedDescription
-        }
+        .background(ClaudeTheme.background)
+        .preferredColorScheme(.dark)
     }
 }

@@ -31,6 +31,7 @@ enum MacAuthError: LocalizedError {
 final class MacAuthState {
     var isAuthenticated = false
     var isAwaitingCode = false
+    var requiresExplicitSignIn = false
     var accountEmail: String?
 
     init() {
@@ -289,9 +290,9 @@ final class MacOSAPIClient {
     // MARK: - Sign Out (Task 2.5)
 
     func signOut() {
-        CredentialStore.delete()
         authState.isAuthenticated = false
         authState.isAwaitingCode = false
+        authState.requiresExplicitSignIn = true
         onSignOut?()
     }
 }

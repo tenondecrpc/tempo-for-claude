@@ -8,6 +8,7 @@ final class MacAppCoordinator {
     let authState: MacAuthState
     let client: MacOSAPIClient
     let poller: UsagePoller
+    private var hasLaunched = false
 
     init() {
         let authState = MacAuthState()
@@ -22,6 +23,9 @@ final class MacAppCoordinator {
     }
 
     func onLaunch() async {
+        guard !hasLaunched else { return }
+        hasLaunched = true
+        guard !authState.requiresExplicitSignIn else { return }
         let restored = await client.tryRestoreSession()
         if restored {
             poller.start()
@@ -40,13 +44,27 @@ struct ClaudeTrackerMacApp: App {
     @State private var coordinator = MacAppCoordinator()
 
     var body: some Scene {
-        MenuBarExtra("ClaudeTracker", systemImage: "sparkles") {
+        MenuBarExtra {
             MacMenuView(coordinator: coordinator)
-                .frame(width: 280)
+                .frame(width: 310)
                 .task {
                     await coordinator.onLaunch()
                 }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "gauge.medium")
+                if let usage = coordinator.poller.latestUsage {
+                    Text("\(Int(usage.utilization5h * 100))%")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                }
+            }
         }
         .menuBarExtraStyle(.window)
+
+        Window("Welcome", id: "welcome") {
+            WelcomeWindowView(coordinator: coordinator)
+                .frame(minWidth: 580, minHeight: 480)
+        }
+        .windowResizability(.contentSize)
     }
 }

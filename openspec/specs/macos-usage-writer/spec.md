@@ -1,15 +1,23 @@
 ## Requirements
 
-### Requirement: Usage polled every 15 minutes on macOS
-The macOS app SHALL poll `GET https://api.anthropic.com/api/oauth/usage` at a 15-minute interval while the user is authenticated. The request SHALL include `Authorization: Bearer <access_token>` and `anthropic-beta: oauth-2025-04-20` headers. A poll SHALL fire immediately on successful authentication.
+### Requirement: Usage polled every 30 minutes on macOS
+The macOS app SHALL poll `GET https://api.anthropic.com/api/oauth/usage` at a **30-minute** interval while the user is authenticated. The request SHALL include `Authorization: Bearer <access_token>` and `anthropic-beta: oauth-2025-04-20` headers. A poll SHALL fire immediately on successful authentication.
+
+> **Rate-limit finding (2026-03-28):** A 15-minute default interval reliably triggers HTTP 429 from Anthropic on this endpoint during normal use. The minimum safe interval observed in production is **30 minutes**. The interval MUST NOT be lowered below 30 minutes in any configuration. Manual one-off refreshes (user-initiated) are acceptable and are not affected by this constraint.
+
+The poller SHALL expose the latest `UsageState` as an observable property (`latestUsage: UsageState?`) so that SwiftUI views can reactively display current usage data without additional iCloud reads.
 
 #### Scenario: Poll fires on schedule
-- **WHEN** 15 minutes elapse since the last successful poll
+- **WHEN** 30 minutes elapse since the last successful poll
 - **THEN** the app issues a new `GET /api/oauth/usage` request
 
 #### Scenario: Poll fires immediately after sign-in
 - **WHEN** OAuth authentication succeeds
-- **THEN** a poll is issued immediately without waiting for the 15-minute interval
+- **THEN** a poll is issued immediately without waiting for the 30-minute interval
+
+#### Scenario: Latest usage state is observable by views
+- **WHEN** a poll returns HTTP 200 with valid usage data
+- **THEN** the `latestUsage: UsageState?` property is updated and any observing SwiftUI views re-render
 
 ### Requirement: Usage response mapped to UsageState and written to iCloud
 The poller SHALL map the API response to `UsageState` (same mapping as `usage-polling` spec: divide utilization by 100, parse ISO 8601 dates). The resulting `UsageState` SHALL be encoded as JSON and written to `~/Library/Mobile Documents/com~apple~CloudDocs/ClaudeTracker/usage.json`.
@@ -34,7 +42,7 @@ If the API response omits `resets_at` (null or missing), the poller SHALL retain
 - **THEN** the written `UsageState.resetAt5h` retains the previous value
 
 ### Requirement: Exponential backoff on 429
-On HTTP 429, the poller SHALL back off exponentially. If a `Retry-After` header is present, that value (seconds) is used as the minimum delay. The delay SHALL be capped at 3600 seconds. Normal 15-minute polling resumes after one successful response.
+On HTTP 429, the poller SHALL back off exponentially. If a `Retry-After` header is present, that value (seconds) is used as the minimum delay. The delay SHALL be capped at 3600 seconds. Normal 30-minute polling resumes after one successful response.
 
 #### Scenario: 429 with Retry-After header
 - **WHEN** the API returns 429 with `Retry-After: 120`
