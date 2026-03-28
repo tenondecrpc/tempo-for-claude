@@ -2,7 +2,7 @@ import SwiftUI
 import Observation
 
 struct ContentView: View {
-    @State private var store = TokenStore()
+    @Environment(TokenStore.self) private var store
 
     var body: some View {
         @Bindable var bindableStore = store
@@ -88,4 +88,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+        .environment(TokenStore())
 }

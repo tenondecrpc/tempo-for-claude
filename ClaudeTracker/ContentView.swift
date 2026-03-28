@@ -1,18 +1,20 @@
 import SwiftUI
-import AuthenticationServices
 
-// MARK: - ContentView (Task 6.1)
+// MARK: - ContentView
 
 struct ContentView: View {
     let authState: AuthState
     let client: AnthropicAPIClient
 
-    @State private var isSigningIn = false
+    @State private var pastedCode = ""
+    @State private var isSubmitting = false
     @State private var signInError: String?
 
     var body: some View {
         if authState.isAuthenticated {
             connectedView
+        } else if authState.isAwaitingCode {
+            codeEntryView
         } else {
             signInView
         }
@@ -41,21 +43,67 @@ struct ContentView: View {
             }
             Spacer()
             Button {
-                Task { await signIn() }
+                signInError = nil
+                client.startOAuthFlow()
+            } label: {
+                Text("Sign in with Claude")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.horizontal)
+            .padding(.bottom)
+        }
+    }
+
+    // MARK: - Code Entry Screen
+
+    private var codeEntryView: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            Image(systemName: "doc.on.clipboard")
+                .font(.system(size: 48))
+                .foregroundStyle(.tint)
+            Text("Paste Authorization Code")
+                .font(.title2.bold())
+            Text("After authorizing in the browser, paste the code shown on screen.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            TextField("code#state", text: $pastedCode)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(.horizontal)
+            if let error = signInError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal)
+            }
+            Spacer()
+            Button {
+                Task { await submitCode() }
             } label: {
                 Group {
-                    if isSigningIn {
+                    if isSubmitting {
                         ProgressView()
                             .tint(.white)
                     } else {
-                        Text("Sign in with Claude")
+                        Text("Submit")
                     }
                 }
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(isSigningIn)
+            .disabled(pastedCode.isEmpty || isSubmitting)
             .padding(.horizontal)
+
+            Button("Cancel") {
+                pastedCode = ""
+                signInError = nil
+                authState.isAwaitingCode = false
+            }
             .padding(.bottom)
         }
     }
@@ -83,17 +131,15 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Sign In Action
+    // MARK: - Submit Code
 
-    private func signIn() async {
-        isSigningIn = true
+    private func submitCode() async {
+        isSubmitting = true
         signInError = nil
-        defer { isSigningIn = false }
+        defer { isSubmitting = false }
         do {
-            try await client.signIn()
-        } catch let error as ASWebAuthenticationSessionError
-            where error.code == .canceledLogin {
-            // User dismissed the browser — not an error worth surfacing
+            try await client.submitOAuthCode(pastedCode)
+            pastedCode = ""
         } catch {
             signInError = error.localizedDescription
         }

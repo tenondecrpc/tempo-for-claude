@@ -41,6 +41,11 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		7731EEAA2F76AD0000C84A59 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 		7731EEDC2F76AD1800C84A59 /* ClaudeTracker */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ClaudeTracker;
@@ -54,11 +59,6 @@
 		7731EEFC2F76AD3900C84A59 /* ClaudeTracker Watch Extension */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "ClaudeTracker Watch Extension";
-			sourceTree = "<group>";
-		};
-		7731EEAA2F76AD0000C84A59 /* Shared */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -125,8 +125,8 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				7731EEDC2F76AD1800C84A59 /* ClaudeTracker */,
 				7731EEAA2F76AD0000C84A59 /* Shared */,
+				7731EEDC2F76AD1800C84A59 /* ClaudeTracker */,
 			);
 			name = ClaudeTracker;
 			packageProductDependencies = (
@@ -150,8 +150,8 @@
 				7731EEFB2F76AD3900C84A59 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				7731EEED2F76AD3700C84A59 /* ClaudeTracker Watch */,
 				7731EEAA2F76AD0000C84A59 /* Shared */,
+				7731EEED2F76AD3700C84A59 /* ClaudeTracker Watch */,
 			);
 			name = "ClaudeTracker Watch";
 			packageProductDependencies = (
@@ -173,8 +173,8 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				7731EEFC2F76AD3900C84A59 /* ClaudeTracker Watch Extension */,
 				7731EEAA2F76AD0000C84A59 /* Shared */,
+				7731EEFC2F76AD3900C84A59 /* ClaudeTracker Watch Extension */,
 			);
 			name = "ClaudeTracker Watch Extension";
 			packageProductDependencies = (

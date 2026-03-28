@@ -83,11 +83,12 @@ THEN:  6 (reset alarm) → 7 (QA) → 8 (stats) → 9 (context window)
 **What to implement:**
 
 1. **`AnthropicAPIClient.swift`** (iOS target) — OAuth PKCE client:
-   - Browser-based sign-in via `ASWebAuthenticationSession`
-   - Token storage in iOS Keychain (never `UserDefaults`)
-   - Auto-refresh 5 min before expiry
+   - ✅ Browser-based sign-in via `UIApplication.shared.open()` + paste-code flow (code#state format)
+   - ✅ Token storage in iOS Keychain (`kSecAttrAccessibleAfterFirstUnlock`)
+   - ✅ Auto-refresh on 401 via `refreshAccessToken()`
    - Exponential backoff on 429 (up to 60-minute cap)
-   - Graceful logout on `invalid_grant` / 401
+   - ✅ Graceful logout on `invalid_grant` / 401
+   - ⚠️ **Known UX gap**: after entering email on Anthropic web, browser does not auto-redirect back to the app. User must manually copy/paste the code. Next: improve redirect flow.
 
 2. **`UsageStatePoller.swift`** (iOS target):
    - Polls `GET /api/oauth/usage` every 15 minutes
@@ -100,10 +101,12 @@ THEN:  6 (reset alarm) → 7 (QA) → 8 (stats) → 9 (context window)
 
 4. **Wire to iOS app launch** — start poller on `applicationDidBecomeActive`
 
+**Status (2026-03-28):** OAuth sign-in working end-to-end with paste-code flow. Token exchange, refresh, and keychain storage confirmed. Remaining: usage polling (`UsageStatePoller`), `WatchRelayManager`, and auto-redirect UX improvement.
+
 **Verification checklist:**
-- Sign in via OAuth → credentials in Keychain
-- Poll fires → `UsageState` printed to console with real values
-- `transferUserInfo` delivers payload to watch simulator
+- ✅ Sign in via OAuth → credentials in Keychain
+- [ ] Poll fires → `UsageState` printed to console with real values
+- [ ] `transferUserInfo` delivers payload to watch simulator
 
 **Anti-pattern guards:**
 - Do NOT store OAuth tokens in `UserDefaults`

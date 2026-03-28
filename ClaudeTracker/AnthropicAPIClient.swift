@@ -1,5 +1,4 @@
 import Foundation
-import AuthenticationServices
 import CryptoKit
 import Security
 import UIKit
@@ -77,6 +76,7 @@ enum AuthError: LocalizedError {
 @MainActor
 final class AuthState {
     var isAuthenticated = false
+    var isAwaitingCode = false
 
     init() {
         isAuthenticated = KeychainStore.load(key: KeychainKey.accessToken) != nil
@@ -86,7 +86,7 @@ final class AuthState {
 // MARK: - AnthropicAPIClient
 
 @MainActor
-final class AnthropicAPIClient: NSObject {
+final class AnthropicAPIClient {
 
     private enum OAuth {
         static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
@@ -104,12 +104,11 @@ final class AnthropicAPIClient: NSObject {
     let authState: AuthState
     var onSignOut: (() -> Void)?
 
-    // Keeps ASWebAuthenticationSession alive for the duration of sign-in
-    private var authSession: AnyObject?
+    private var codeVerifier: String?
+    private var oauthState: String?
 
     init(authState: AuthState) {
         self.authState = authState
-        super.init()
     }
 
     // MARK: - PKCE (Tasks 2.1)
@@ -146,66 +145,54 @@ final class AnthropicAPIClient: NSObject {
         return components.url!
     }
 
-    // MARK: - Sign In (Task 2.3)
+    // MARK: - Sign In (Browser + Code Paste)
 
-    func signIn() async throws {
+    func startOAuthFlow() {
         let (verifier, challenge) = generatePKCE()
         let state = UUID().uuidString
+
+        codeVerifier = verifier
+        oauthState = state
+
         let authURL = buildAuthorizationURL(challenge: challenge, state: state)
+        print("[Auth] Opening browser: \(authURL)")
+        UIApplication.shared.open(authURL)
+        authState.isAwaitingCode = true
+    }
 
-        let callbackURL: URL = try await withCheckedThrowingContinuation { continuation in
-            let session: ASWebAuthenticationSession
-            if #available(iOS 17.4, *) {
-                // Uses HTTPS callback interception — no Universal Links required
-                session = ASWebAuthenticationSession(
-                    url: authURL,
-                    callback: .https(host: "platform.claude.com", path: "/oauth/code/callback")
-                ) { url, error in
-                    if let error { continuation.resume(throwing: error) }
-                    else if let url { continuation.resume(returning: url) }
-                    else { continuation.resume(throwing: AuthError.invalidCallback) }
-                }
-            } else {
-                session = ASWebAuthenticationSession(
-                    url: authURL,
-                    callbackURLScheme: "https"
-                ) { url, error in
-                    if let error { continuation.resume(throwing: error) }
-                    else if let url { continuation.resume(returning: url) }
-                    else { continuation.resume(throwing: AuthError.invalidCallback) }
-                }
+    func submitOAuthCode(_ rawCode: String) async throws {
+        let trimmed = rawCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = trimmed.split(separator: "#", maxSplits: 1).map(String.init)
+        let code = parts[0]
+
+        if parts.count > 1 {
+            let returnedState = parts[1]
+            guard returnedState == oauthState else {
+                clearPendingOAuth()
+                throw AuthError.invalidCallback
             }
-            session.presentationContextProvider = self
-            session.prefersEphemeralWebBrowserSession = false
-            self.authSession = session
-            session.start()
-        }
-        authSession = nil
-
-        // Parse code and state: try query params first, then <code>#<state> fragment format
-        let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)
-        var code: String?
-        var returnedState: String?
-
-        if let q = components?.queryItems?.first(where: { $0.name == "code" })?.value {
-            code = q
-            returnedState = components?.queryItems?.first(where: { $0.name == "state" })?.value
-        } else if let fragment = callbackURL.fragment, !fragment.isEmpty {
-            let parts = fragment.split(separator: "#", maxSplits: 1).map(String.init)
-            code = parts.first
-            returnedState = parts.count > 1 ? parts[1] : nil
         }
 
-        guard let code else { throw AuthError.invalidCallback }
+        guard let verifier = codeVerifier else {
+            clearPendingOAuth()
+            throw AuthError.invalidCallback
+        }
 
         let (accessToken, refreshToken) = try await exchangeCode(
             code,
             verifier: verifier,
-            state: returnedState ?? state
+            state: oauthState ?? ""
         )
         KeychainStore.save(accessToken, forKey: KeychainKey.accessToken)
         KeychainStore.save(refreshToken, forKey: KeychainKey.refreshToken)
         authState.isAuthenticated = true
+        clearPendingOAuth()
+    }
+
+    private func clearPendingOAuth() {
+        codeVerifier = nil
+        oauthState = nil
+        authState.isAwaitingCode = false
     }
 
     // MARK: - Token Exchange (Task 2.4)
@@ -305,15 +292,3 @@ final class AnthropicAPIClient: NSObject {
     }
 }
 
-// MARK: - ASWebAuthenticationPresentationContextProviding (Task 2.3)
-
-extension AnthropicAPIClient: ASWebAuthenticationPresentationContextProviding {
-    nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        // System always calls this on the main thread
-        MainActor.assumeIsolated {
-            UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .first?.windows.first(where: \.isKeyWindow) ?? UIWindow()
-        }
-    }
-}
