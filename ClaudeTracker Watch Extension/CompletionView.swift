@@ -31,10 +31,8 @@ struct CompletionView: View {
         sessionId: "preview-1",
         inputTokens: 4200,
         outputTokens: 1800,
-        costUSD: 0.087,
+        costUSD: 0.0,
         durationSeconds: 142,
-        timestamp: Date(),
-        limitResetAt: nil,
-        isDoubleLimitActive: false
+        timestamp: Date()
     ))
 }

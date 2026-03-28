@@ -7,8 +7,6 @@ struct SessionInfo: Codable, Identifiable {
     let costUSD: Double
     let durationSeconds: Int
     let timestamp: Date
-    let limitResetAt: Date?
-    let isDoubleLimitActive: Bool
 
     var id: String { sessionId }
 }
