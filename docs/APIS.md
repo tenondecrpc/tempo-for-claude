@@ -34,6 +34,8 @@ state=<random>
 
 **Callback note**: Uses a "paste code" flow — the redirect lands in the browser and the user pastes a `<code>#<state>` string. Code = part before `#`, state = part after.
 
+**Claude Code credential reuse**: Claude Code does NOT expose reusable OAuth tokens. `~/.claude/.claude.json` contains account metadata (`oauthAccount.emailAddress`, `displayName`, `accountUuid`) but no `access_token` or `refresh_token`. `~/.claude/credentials.json` exists but is empty (3 bytes). Each app (ClaudeTracker, claude-usage-bar, etc.) MUST manage its own OAuth tokens via its own token exchange. The email from `.claude.json` can be read for display purposes only.
+
 **Token exchange — POST body (JSON):**
 ```json
 {
