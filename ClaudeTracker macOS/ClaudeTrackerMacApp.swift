@@ -60,13 +60,10 @@ struct ClaudeTrackerMacApp: App {
                     await coordinator.onLaunch()
                 }
         } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "gauge.medium")
-                if let usage = coordinator.poller.latestUsage {
-                    Text("\(Int(usage.utilization5h * 100))%")
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                }
-            }
+            DynamicMenuBarIconView(
+                usage: coordinator.poller.latestUsage,
+                isAuthenticated: coordinator.authState.isAuthenticated
+            )
         }
         .menuBarExtraStyle(.window)
 
