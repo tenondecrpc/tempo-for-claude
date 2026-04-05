@@ -62,6 +62,9 @@ struct StatsDetailView: View {
     // MARK: - Chart Section
 
     @State private var timeRange: TimeRange = .hours5
+    @State private var previousTimeRange: TimeRange = .hours5
+    @State private var customStart: Date = Calendar.current.startOfDay(for: Calendar.current.date(byAdding: .day, value: -1, to: Date())!)
+    @State private var customEnd: Date = Calendar.current.startOfDay(for: Date())
 
     enum TimeRange: String, CaseIterable, Identifiable {
         case hours5 = "5 Hours"
@@ -84,6 +87,9 @@ struct StatsDetailView: View {
                 Menu {
                     ForEach(TimeRange.allCases) { range in
                         Button(range.rawValue) {
+                            if range == .custom {
+                                previousTimeRange = timeRange
+                            }
                             timeRange = range
                         }
                     }
@@ -94,6 +100,33 @@ struct StatsDetailView: View {
                 .font(.caption)
                 .foregroundStyle(ClaudeTheme.textSecondary)
                 .frame(width: 80)
+            }
+
+            if timeRange == .custom {
+                HStack(spacing: 8) {
+                    DatePicker("", selection: $customStart, displayedComponents: .date)
+                        .datePickerStyle(.compact)
+                        .labelsHidden()
+                    Text("to")
+                        .font(.caption)
+                        .foregroundStyle(ClaudeTheme.textSecondary)
+                    DatePicker("", selection: $customEnd, in: customStart..., displayedComponents: .date)
+                        .datePickerStyle(.compact)
+                        .labelsHidden()
+                    Button {
+                        timeRange = previousTimeRange
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption)
+                            .foregroundStyle(ClaudeTheme.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .onChange(of: customStart) { _, newStart in
+                    if customEnd < newStart {
+                        customEnd = newStart
+                    }
+                }
             }
 
             if history.snapshots.isEmpty {
@@ -168,6 +201,7 @@ struct StatsDetailView: View {
                     }
                 }
                 .chartXAxis {
+                    let customSpan = customEnd.timeIntervalSince(customStart)
                     if timeRange == .hours24 {
                         AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
                             AxisGridLine().foregroundStyle(ClaudeTheme.progressTrack)
@@ -178,6 +212,18 @@ struct StatsDetailView: View {
                         AxisMarks(values: .stride(by: .hour)) { _ in
                             AxisGridLine().foregroundStyle(ClaudeTheme.progressTrack)
                             AxisValueLabel(format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+                                .foregroundStyle(ClaudeTheme.textSecondary)
+                        }
+                    } else if timeRange == .custom && customSpan <= 24 * 3600 {
+                        AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
+                            AxisGridLine().foregroundStyle(ClaudeTheme.progressTrack)
+                            AxisValueLabel(format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+                                .foregroundStyle(ClaudeTheme.textSecondary)
+                        }
+                    } else if timeRange == .custom && customSpan <= 7 * 24 * 3600 {
+                        AxisMarks(values: .stride(by: .day)) { _ in
+                            AxisGridLine().foregroundStyle(ClaudeTheme.progressTrack)
+                            AxisValueLabel(format: .dateTime.month().day())
                                 .foregroundStyle(ClaudeTheme.textSecondary)
                         }
                     } else {
@@ -232,7 +278,9 @@ struct StatsDetailView: View {
         case .days7: interval = 7 * 24 * 3600
         case .days30: interval = 30 * 24 * 3600
         case .days90: interval = 90 * 24 * 3600
-        case .custom: return history.snapshots // fallback for now
+        case .custom:
+            let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: customEnd) ?? customEnd
+            return history.snapshots.filter { $0.date >= customStart && $0.date < endOfDay }
         }
         let cutoff = now.addingTimeInterval(-interval)
         return history.snapshots.filter { $0.date >= cutoff }
@@ -248,8 +296,8 @@ struct StatsDetailView: View {
         case .days30: interval = 30 * 24 * 3600
         case .days90: interval = 90 * 24 * 3600
         case .custom:
-            guard let first = history.snapshots.map(\.date).min() else { return now.addingTimeInterval(-3600)...now }
-            return first...now
+            let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: customEnd) ?? customEnd
+            return customStart...endOfDay
         }
         let cutoff = now.addingTimeInterval(-interval)
         return cutoff...now
