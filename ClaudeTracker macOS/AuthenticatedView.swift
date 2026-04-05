@@ -63,6 +63,24 @@ struct AuthenticatedMenuView: View {
                 .font(.caption)
                 .foregroundStyle(ClaudeTheme.textSecondary)
 
+            // Extra Usage (only when enabled)
+            if let extra = usage.extraUsage, extra.isEnabled {
+                Spacer().frame(height: 4)
+
+                Text("Extra Usage")
+                    .font(.caption)
+                    .foregroundStyle(ClaudeTheme.textSecondary)
+                if let used = extra.usedCreditsAmount, let limit = extra.monthlyLimitAmount {
+                    Text("\(ExtraUsage.formatUSD(used)) / \(ExtraUsage.formatUSD(limit))")
+                        .font(.title2.bold())
+                        .foregroundStyle(ClaudeTheme.textPrimary)
+                    UsageProgressBar(progress: (extra.utilization ?? 0) / 100.0)
+                }
+                Text("Resets monthly")
+                    .font(.caption)
+                    .foregroundStyle(ClaudeTheme.textSecondary)
+            }
+
             Spacer().frame(height: 4)
 
             // Burn-rate status

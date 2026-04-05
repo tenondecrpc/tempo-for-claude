@@ -109,9 +109,16 @@ final class UsagePoller {
             let utilization: Double?
             let resets_at: String?
         }
+        struct RawExtraUsage: Decodable {
+            let is_enabled: Bool
+            let used_credits: Double?
+            let monthly_limit: Double?
+            let utilization: Double?
+        }
         struct Response: Decodable {
             let five_hour: Window
             let seven_day: Window
+            let extra_usage: RawExtraUsage?
         }
 
         let response = try JSONDecoder().decode(Response.self, from: data)
@@ -146,12 +153,22 @@ final class UsagePoller {
         lastResetAt5h = resetAt5h
         lastResetAt7d = resetAt7d
 
+        let extraUsage = response.extra_usage.map { raw in
+            ExtraUsage(
+                isEnabled: raw.is_enabled,
+                usedCredits: raw.used_credits,
+                monthlyLimit: raw.monthly_limit,
+                utilization: raw.utilization
+            )
+        }
+
         return UsageState(
             utilization5h: utilization5h,
             utilization7d: utilization7d,
             resetAt5h: resetAt5h,
             resetAt7d: resetAt7d,
-            isMocked: false
+            isMocked: false,
+            extraUsage: extraUsage
         )
     }
 

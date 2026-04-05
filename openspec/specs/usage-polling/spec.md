@@ -31,6 +31,22 @@ If the API response omits `resets_at` (null or missing), the poller SHALL retain
 - **WHEN** `utilization5h` drops from above 0.0 to near 0.0 in consecutive polls
 - **THEN** the previous `resetAt5h` is discarded and replaced with the new value (or nil)
 
+### Requirement: API response decoding
+The `UsagePoller.fetchUsage()` method SHALL decode the full API response including the optional `extra_usage` field. The internal `Response` struct SHALL include:
+- `five_hour: Window`
+- `seven_day: Window`
+- `extra_usage: ExtraUsage?`
+
+The decoded `ExtraUsage` SHALL be passed through to the returned `UsageState`.
+
+#### Scenario: API response with extra_usage present
+- **WHEN** the API returns a response containing `"extra_usage": {"is_enabled": true, "monthly_limit": 2000, "used_credits": 530, "utilization": 26.5}`
+- **THEN** `fetchUsage()` returns a `UsageState` with `extraUsage` populated
+
+#### Scenario: API response without extra_usage
+- **WHEN** the API returns a response without the `extra_usage` field
+- **THEN** `fetchUsage()` returns a `UsageState` with `extraUsage = nil`
+
 ### Requirement: Exponential backoff on 429
 On HTTP 429, the poller SHALL back off exponentially. If a `Retry-After` header is present, that value (seconds) is used as the minimum delay. The delay SHALL be capped at 3600 seconds (1 hour). Normal 15-minute polling resumes after one successful response.
 
