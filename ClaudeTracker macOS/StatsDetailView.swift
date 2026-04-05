@@ -168,7 +168,13 @@ struct StatsDetailView: View {
                     }
                 }
                 .chartXAxis {
-                    if timeRange == .hours5 || timeRange == .hours24 {
+                    if timeRange == .hours24 {
+                        AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
+                            AxisGridLine().foregroundStyle(ClaudeTheme.progressTrack)
+                            AxisValueLabel(format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+                                .foregroundStyle(ClaudeTheme.textSecondary)
+                        }
+                    } else if timeRange == .hours5 {
                         AxisMarks(values: .stride(by: .hour)) { _ in
                             AxisGridLine().foregroundStyle(ClaudeTheme.progressTrack)
                             AxisValueLabel(format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
