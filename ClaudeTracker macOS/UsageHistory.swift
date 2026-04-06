@@ -23,6 +23,7 @@ struct UsageSnapshot: Codable, Identifiable {
 final class UsageHistory {
 
     private(set) var snapshots: [UsageSnapshot] = []
+    private var syncHistoryViaICloud: Bool
 
     private static let storageURL: URL = {
         let dir = FileManager.default.homeDirectoryForCurrentUser
@@ -33,8 +34,12 @@ final class UsageHistory {
 
     private static let maxAge: TimeInterval = 30 * 24 * 3600  // 30 days
 
-    init() {
+    init(syncHistoryViaICloud: Bool = true) {
+        self.syncHistoryViaICloud = syncHistoryViaICloud
         load()
+        if syncHistoryViaICloud {
+            syncWithICloud()
+        }
     }
 
     // MARK: - Public
@@ -48,6 +53,16 @@ final class UsageHistory {
         snapshots.append(snapshot)
         pruneOld()
         save()
+        if syncHistoryViaICloud {
+            syncWithICloud()
+        }
+    }
+
+    func setSyncHistoryEnabled(_ enabled: Bool) {
+        syncHistoryViaICloud = enabled
+        if enabled {
+            syncWithICloud()
+        }
     }
 
     // MARK: - Persistence
@@ -69,5 +84,65 @@ final class UsageHistory {
     private func pruneOld() {
         let cutoff = Date().addingTimeInterval(-Self.maxAge)
         snapshots.removeAll { $0.date < cutoff }
+    }
+
+    // MARK: - iCloud Sync
+
+    private func syncWithICloud() {
+        let iCloudURL = Self.iCloudMirrorURL()
+        let iCloudSnapshots = Self.readSnapshots(at: iCloudURL) ?? []
+        let merged = Self.mergeSnapshots(local: snapshots, cloud: iCloudSnapshots, maxAge: Self.maxAge)
+        snapshots = merged
+        save()
+        Self.writeSnapshots(merged, to: iCloudURL)
+    }
+
+    private static func iCloudMirrorURL() -> URL {
+        if let containerURL = FileManager.default.url(forUbiquityContainerIdentifier: nil) {
+            return containerURL.appendingPathComponent("Documents/ClaudeTracker/usage-history.json")
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/ClaudeTracker/usage-history.json")
+    }
+
+    private static func readSnapshots(at url: URL) -> [UsageSnapshot]? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode([UsageSnapshot].self, from: data)
+    }
+
+    private static func writeSnapshots(_ snapshots: [UsageSnapshot], to url: URL) {
+        let dir = url.deletingLastPathComponent()
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(snapshots) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
+    private static func mergeSnapshots(
+        local: [UsageSnapshot],
+        cloud: [UsageSnapshot],
+        maxAge: TimeInterval
+    ) -> [UsageSnapshot] {
+        var mergedByIdentity: [String: UsageSnapshot] = [:]
+        for snapshot in local + cloud {
+            mergedByIdentity[snapshotIdentity(snapshot)] = snapshot
+        }
+
+        let cutoff = Date().addingTimeInterval(-maxAge)
+        return mergedByIdentity.values
+            .filter { $0.date >= cutoff }
+            .sorted { $0.date < $1.date }
+    }
+
+    private static func snapshotIdentity(_ snapshot: UsageSnapshot) -> String {
+        let timestamp = Int(snapshot.date.timeIntervalSince1970)
+        let utilization5h = Int((snapshot.utilization5h * 10_000).rounded())
+        let utilization7d = Int((snapshot.utilization7d * 10_000).rounded())
+        return "\(timestamp)|\(utilization5h)|\(utilization7d)"
     }
 }

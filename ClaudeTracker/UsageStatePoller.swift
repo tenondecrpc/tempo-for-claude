@@ -103,6 +103,7 @@ final class UsageStatePoller {
         }
 
         let response = try JSONDecoder().decode(Response.self, from: data)
+        let isDoubleLimitPromoActive = UsagePromoDetector.detectDoubleLimitPromo(from: data)
 
         // Normalize utilization from 0–100 to 0.0–1.0
         let utilization5h = (response.five_hour.utilization ?? 0) / 100.0
@@ -153,7 +154,8 @@ final class UsageStatePoller {
             resetAt5h: resetAt5h,
             resetAt7d: resetAt7d,
             isMocked: false,
-            extraUsage: extraUsage
+            extraUsage: extraUsage,
+            isDoubleLimitPromoActive: isDoubleLimitPromoActive
         )
     }
 }

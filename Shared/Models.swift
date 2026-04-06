@@ -48,6 +48,7 @@ struct UsageState: Codable {
     var resetAt7d: Date
     var isMocked: Bool
     var extraUsage: ExtraUsage?
+    var isDoubleLimitPromoActive: Bool?
 
     static var mock: UsageState {
         UsageState(
@@ -61,7 +62,8 @@ struct UsageState: Codable {
                 usedCredits: 0,
                 monthlyLimit: 2000,
                 utilization: 0
-            )
+            ),
+            isDoubleLimitPromoActive: false
         )
     }
 }

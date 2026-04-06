@@ -8,6 +8,9 @@ final class MacAppCoordinator {
     let authState: MacAuthState
     let client: MacOSAPIClient
     let poller: UsagePoller
+    let settings: MacSettingsStore
+    let launchAtLoginManager: LaunchAtLoginManager
+    let serviceStatusMonitor: ServiceStatusMonitor
     let history: UsageHistory
     let localDB: ClaudeLocalDBReader
     private var hasLaunched = false
@@ -16,18 +19,41 @@ final class MacAppCoordinator {
         let authState = MacAuthState()
         let client = MacOSAPIClient(authState: authState)
         let poller = UsagePoller(client: client)
-        let history = UsageHistory()
+        let settings = MacSettingsStore()
+        let launchAtLoginManager = LaunchAtLoginManager()
+        let serviceStatusMonitor = ServiceStatusMonitor()
+        let history = UsageHistory(syncHistoryViaICloud: settings.syncHistoryViaICloud)
         let localDB = ClaudeLocalDBReader()
 
         self.authState = authState
         self.client = client
         self.poller = poller
+        self.settings = settings
+        self.launchAtLoginManager = launchAtLoginManager
+        self.serviceStatusMonitor = serviceStatusMonitor
         self.history = history
         self.localDB = localDB
 
-        client.onSignOut = { [weak poller] in poller?.stop() }
+        client.onSignOut = { [weak self] in
+            self?.poller.stop()
+            self?.serviceStatusMonitor.stop()
+        }
         poller.onUsageState = { [weak history] state in
             history?.append(state)
+        }
+
+        settings.onServiceStatusMonitoringChanged = { [weak self] _ in
+            self?.updateServiceStatusMonitoring()
+        }
+        settings.onSyncHistoryViaICloudChanged = { [weak history] enabled in
+            history?.setSyncHistoryEnabled(enabled)
+        }
+
+        launchAtLoginManager.refresh()
+        settings.updateLaunchAtLoginFromSystem(launchAtLoginManager.isEnabled)
+        if settings.launchAtLogin != launchAtLoginManager.isEnabled {
+            launchAtLoginManager.setEnabled(settings.launchAtLogin)
+            settings.updateLaunchAtLoginFromSystem(launchAtLoginManager.isEnabled)
         }
     }
 
@@ -38,11 +64,27 @@ final class MacAppCoordinator {
         let restored = await client.tryRestoreSession()
         if restored {
             poller.start()
+            updateServiceStatusMonitoring()
         }
     }
 
     func onAuthenticated() {
         poller.start()
+        updateServiceStatusMonitoring()
+    }
+
+    func setLaunchAtLoginEnabled(_ enabled: Bool) {
+        launchAtLoginManager.setEnabled(enabled)
+        settings.updateLaunchAtLoginFromSystem(launchAtLoginManager.isEnabled)
+    }
+
+    private func updateServiceStatusMonitoring() {
+        let shouldRun = authState.isAuthenticated && settings.serviceStatusMonitoring
+        if shouldRun {
+            serviceStatusMonitor.start()
+        } else {
+            serviceStatusMonitor.stop()
+        }
     }
 }
 
@@ -62,7 +104,8 @@ struct ClaudeTrackerMacApp: App {
         } label: {
             DynamicMenuBarIconView(
                 usage: coordinator.poller.latestUsage,
-                isAuthenticated: coordinator.authState.isAuthenticated
+                isAuthenticated: coordinator.authState.isAuthenticated,
+                showPercentage: coordinator.settings.showPercentageInMenuBar
             )
         }
         .menuBarExtraStyle(.window)

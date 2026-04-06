@@ -10,13 +10,24 @@ struct StatsDetailView: View {
     let history: UsageHistory
     let localDB: ClaudeLocalDBReader
 
+    @State private var chartUse24HourTime: Bool
     @State private var showSession = true
     @State private var showWeekly = true
     @State private var shareAnchorView: NSView?
     @State private var shareErrorMessage = ""
     @State private var showShareError = false
+    @State private var showSettings = false
+
+    init(coordinator: MacAppCoordinator, history: UsageHistory, localDB: ClaudeLocalDBReader) {
+        self.coordinator = coordinator
+        self.history = history
+        self.localDB = localDB
+        _chartUse24HourTime = State(initialValue: coordinator.settings.use24HourTime)
+    }
 
     var body: some View {
+        let use24HourTime = chartUse24HourTime
+
         VStack(spacing: 0) {
             header
             Divider().overlay(ClaudeTheme.progressTrack)
@@ -25,7 +36,7 @@ struct StatsDetailView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     if let usage = coordinator.poller.latestUsage {
                         TimelineView(.periodic(from: .now, by: 30)) { context in
-                            chartSection
+                            chartSection(use24HourTime: use24HourTime)
                             Divider().overlay(ClaudeTheme.progressTrack)
                             heatmapSection
                             Divider().overlay(ClaudeTheme.progressTrack)
@@ -62,9 +73,129 @@ struct StatsDetailView: View {
                     .font(.caption)
                     .foregroundStyle(ClaudeTheme.textSecondary)
             }
+            Button {
+                showSettings.toggle()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(ClaudeTheme.textSecondary)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showSettings, arrowEdge: .top) {
+                settingsPopover
+                    .frame(width: 430)
+                    .padding(16)
+                    .background(ClaudeTheme.background)
+                    .preferredColorScheme(.dark)
+            }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 14)
+    }
+
+    @ViewBuilder
+    private var settingsPopover: some View {
+        @Bindable var settings = coordinator.settings
+
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Settings")
+                .font(.headline)
+                .foregroundStyle(ClaudeTheme.textPrimary)
+                .padding(.bottom, 14)
+
+            Divider().overlay(ClaudeTheme.progressTrack)
+
+            settingsToggleRow(
+                icon: "power",
+                title: "Launch at Login",
+                subtitle: coordinator.launchAtLoginManager.helperMessage ?? "Start app when you log in",
+                isOn: Binding(
+                    get: { coordinator.launchAtLoginManager.isEnabled },
+                    set: { coordinator.setLaunchAtLoginEnabled($0) }
+                ),
+                isDisabled: !coordinator.launchAtLoginManager.isSupportedInstallLocation
+            )
+
+            Divider().overlay(ClaudeTheme.progressTrack)
+
+            settingsToggleRow(
+                icon: "percent",
+                title: "Show Percentage in Menu Bar",
+                subtitle: "Display session usage percentage next to the icon",
+                isOn: $settings.showPercentageInMenuBar
+            )
+
+            Divider().overlay(ClaudeTheme.progressTrack)
+
+            settingsToggleRow(
+                icon: "clock.arrow.2.circlepath",
+                title: "24-Hour Time",
+                subtitle: "Times shown as 14:30",
+                isOn: Binding(
+                    get: { chartUse24HourTime },
+                    set: { newValue in
+                        chartUse24HourTime = newValue
+                        settings.use24HourTime = newValue
+                    }
+                )
+            )
+
+            Divider().overlay(ClaudeTheme.progressTrack)
+
+            settingsToggleRow(
+                icon: "dot.radiowaves.left.and.right",
+                title: "Service Status Monitoring",
+                subtitle: "Show Claude service status in the menu bar icon",
+                isOn: $settings.serviceStatusMonitoring
+            )
+
+            Divider().overlay(ClaudeTheme.progressTrack)
+
+            settingsToggleRow(
+                icon: "icloud",
+                title: "Sync History via iCloud",
+                subtitle: "Sync usage history across your Macs",
+                isOn: $settings.syncHistoryViaICloud
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func settingsToggleRow(
+        icon: String,
+        title: String,
+        subtitle: String,
+        isOn: Binding<Bool>,
+        isDisabled: Bool = false
+    ) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(Color(red: 0.16, green: 0.50, blue: 0.95))
+                .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(isDisabled ? ClaudeTheme.textSecondary : ClaudeTheme.textPrimary)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.callout)
+                    .foregroundStyle(ClaudeTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(ClaudeTheme.accent)
+                .disabled(isDisabled)
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, 2)
     }
 
     // MARK: - Chart Section
@@ -85,7 +216,7 @@ struct StatsDetailView: View {
     }
 
     @ViewBuilder
-    private var chartSection: some View {
+    private func chartSection(use24HourTime: Bool) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("Usage Over Time")
@@ -257,21 +388,33 @@ struct StatsDetailView: View {
                 .chartXAxis {
                     let customSpan = customEnd.timeIntervalSince(customStart)
                     if timeRange == .hours24 {
-                        AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
+                        AxisMarks(values: .stride(by: .hour, count: 3)) { value in
                             AxisGridLine().foregroundStyle(ClaudeTheme.progressTrack)
-                            AxisValueLabel(format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+                            AxisValueLabel {
+                                if let date = value.as(Date.self) {
+                                    Text(chartHourAxisLabel(for: date, use24HourTime: use24HourTime))
+                                }
+                            }
                                 .foregroundStyle(ClaudeTheme.textSecondary)
                         }
                     } else if timeRange == .hours5 {
-                        AxisMarks(values: .stride(by: .hour)) { _ in
+                        AxisMarks(values: .stride(by: .hour)) { value in
                             AxisGridLine().foregroundStyle(ClaudeTheme.progressTrack)
-                            AxisValueLabel(format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+                            AxisValueLabel {
+                                if let date = value.as(Date.self) {
+                                    Text(chartHourAxisLabel(for: date, use24HourTime: use24HourTime))
+                                }
+                            }
                                 .foregroundStyle(ClaudeTheme.textSecondary)
                         }
                     } else if timeRange == .custom && customSpan <= 24 * 3600 {
-                        AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
+                        AxisMarks(values: .stride(by: .hour, count: 3)) { value in
                             AxisGridLine().foregroundStyle(ClaudeTheme.progressTrack)
-                            AxisValueLabel(format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+                            AxisValueLabel {
+                                if let date = value.as(Date.self) {
+                                    Text(chartHourAxisLabel(for: date, use24HourTime: use24HourTime))
+                                }
+                            }
                                 .foregroundStyle(ClaudeTheme.textSecondary)
                         }
                     } else if timeRange == .custom && customSpan <= 7 * 24 * 3600 {
@@ -291,6 +434,7 @@ struct StatsDetailView: View {
                 .chartYScale(domain: 0...105)
                 .chartXScale(domain: dateDomain())
                 .frame(height: 220)
+                .id("chart-time-format-\(use24HourTime)")
             }
 
             // Legend
@@ -321,6 +465,15 @@ struct StatsDetailView: View {
         .padding(.horizontal, 24)
         .padding(.top, 24)
         .padding(.bottom, 20)
+    }
+
+    private func chartHourAxisLabel(for date: Date, use24HourTime: Bool) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = use24HourTime
+            ? Locale(identifier: "en_GB_POSIX")
+            : Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = use24HourTime ? "HH:mm" : "h:mm a"
+        return formatter.string(from: date)
     }
 
     private func filteredSnapshots() -> [UsageSnapshot] {
@@ -364,15 +517,40 @@ struct StatsDetailView: View {
         guard sorted.count > 1 else { return sorted }
 
         let riseEpsilon = 0.005
+        let visibleSessionRange: ArraySlice<UsageSnapshot>
         if let riseIndex = sorted.indices.dropFirst().first(where: { index in
             sorted[index].utilization5h - sorted[index - 1].utilization5h > riseEpsilon
         }) {
             let startIndex = max(0, riseIndex - 1)
-            return Array(sorted[startIndex...])
+            visibleSessionRange = sorted[startIndex...]
+        } else {
+            let maxSession = sorted.map(\.utilization5h).max() ?? 0
+            guard maxSession > riseEpsilon else { return [] }
+            visibleSessionRange = sorted[...]
         }
 
-        let maxSession = sorted.map(\.utilization5h).max() ?? 0
-        return maxSession <= riseEpsilon ? [] : sorted
+        let trimmed = trimTrailingIdleSessionSnapshots(Array(visibleSessionRange))
+        return trimmed
+    }
+
+    private func trimTrailingIdleSessionSnapshots(_ snapshots: [UsageSnapshot]) -> [UsageSnapshot] {
+        guard snapshots.count > 1 else { return snapshots }
+
+        let epsilon = 0.0001
+        var lastMeaningfulIndex = snapshots.count - 1
+
+        while lastMeaningfulIndex > 0 {
+            let current = snapshots[lastMeaningfulIndex]
+            let previous = snapshots[lastMeaningfulIndex - 1]
+            let sessionChanged = abs(current.utilization5h - previous.utilization5h) > epsilon
+
+            if sessionChanged {
+                break
+            }
+            lastMeaningfulIndex -= 1
+        }
+
+        return Array(snapshots[...lastMeaningfulIndex])
     }
 
     private func splitSessionSegments(_ snapshots: [UsageSnapshot], maxGap: TimeInterval) -> [[UsageSnapshot]] {
@@ -1273,15 +1451,19 @@ private struct StatsShareCardView: View {
         guard sorted.count > 1 else { return sorted }
 
         let riseEpsilon = 0.005
+        let visibleSessionRange: ArraySlice<UsageSnapshot>
         if let riseIndex = sorted.indices.dropFirst().first(where: { index in
             sorted[index].utilization5h - sorted[index - 1].utilization5h > riseEpsilon
         }) {
             let startIndex = max(0, riseIndex - 1)
-            return Array(sorted[startIndex...])
+            visibleSessionRange = sorted[startIndex...]
+        } else {
+            let maxSession = sorted.map(\.utilization5h).max() ?? 0
+            guard maxSession > riseEpsilon else { return [] }
+            visibleSessionRange = sorted[...]
         }
 
-        let maxSession = sorted.map(\.utilization5h).max() ?? 0
-        return maxSession <= riseEpsilon ? [] : sorted
+        return trimTrailingIdleSessionSnapshots(Array(visibleSessionRange))
     }
 
     private func splitSessionSegments(_ snapshots: [UsageSnapshot], maxGap: TimeInterval) -> [[UsageSnapshot]] {
@@ -1307,6 +1489,26 @@ private struct StatsShareCardView: View {
             result.append(current)
         }
         return result
+    }
+
+    private func trimTrailingIdleSessionSnapshots(_ snapshots: [UsageSnapshot]) -> [UsageSnapshot] {
+        guard snapshots.count > 1 else { return snapshots }
+
+        let epsilon = 0.0001
+        var lastMeaningfulIndex = snapshots.count - 1
+
+        while lastMeaningfulIndex > 0 {
+            let current = snapshots[lastMeaningfulIndex]
+            let previous = snapshots[lastMeaningfulIndex - 1]
+            let sessionChanged = abs(current.utilization5h - previous.utilization5h) > epsilon
+
+            if sessionChanged {
+                break
+            }
+            lastMeaningfulIndex -= 1
+        }
+
+        return Array(snapshots[...lastMeaningfulIndex])
     }
 
     @ViewBuilder

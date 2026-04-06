@@ -7,6 +7,11 @@ struct AuthenticatedMenuView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        // Read preference values outside TimelineView so observation invalidates immediately
+        // when toggles change in the settings window.
+        let use24HourTime = coordinator.settings.use24HourTime
+        let showServiceStatus = coordinator.settings.serviceStatusMonitoring
+
         VStack(spacing: 0) {
             MenuBarHeaderView(
                 onRefresh: { coordinator.poller.pollNow() },
@@ -16,7 +21,12 @@ struct AuthenticatedMenuView: View {
             if let usage = coordinator.poller.latestUsage {
                 TimelineView(.periodic(from: .now, by: 30)) { context in
                     VStack(spacing: 0) {
-                        usageContent(usage: usage, now: context.date)
+                        usageContent(
+                            usage: usage,
+                            now: context.date,
+                            use24HourTime: use24HourTime,
+                            showServiceStatus: showServiceStatus
+                        )
                         Divider().overlay(ClaudeTheme.progressTrack)
                         actionItems
                     }
@@ -34,8 +44,25 @@ struct AuthenticatedMenuView: View {
     // MARK: - Usage Content
 
     @ViewBuilder
-    private func usageContent(usage: UsageState, now: Date) -> some View {
+    private func usageContent(
+        usage: UsageState,
+        now: Date,
+        use24HourTime: Bool,
+        showServiceStatus: Bool
+    ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            if usage.isDoubleLimitPromoActive == true {
+                HStack(spacing: 4) {
+                    Spacer()
+                    Image(systemName: "sparkles")
+                        .font(.caption)
+                        .foregroundStyle(.yellow)
+                    Text("2x promo active")
+                        .font(.caption)
+                        .foregroundStyle(ClaudeTheme.textSecondary)
+                }
+            }
+
             // Current Session
             Text("Current Session")
                 .font(.caption)
@@ -44,7 +71,13 @@ struct AuthenticatedMenuView: View {
                 .font(.title2.bold())
                 .foregroundStyle(ClaudeTheme.textPrimary)
             UsageProgressBar(progress: usage.utilization5h)
-            Text(resetCountdown(date: usage.resetAt5h, now: now))
+            Text(
+                TimeFormatPolicy.sessionResetString(
+                    resetAt: usage.resetAt5h,
+                    now: now,
+                    use24HourTime: use24HourTime
+                )
+            )
                 .font(.caption)
                 .foregroundStyle(ClaudeTheme.textSecondary)
 
@@ -58,9 +91,18 @@ struct AuthenticatedMenuView: View {
                 .font(.title2.bold())
                 .foregroundStyle(ClaudeTheme.textPrimary)
             UsageProgressBar(progress: usage.utilization7d)
-            Text(weeklyReset(date: usage.resetAt7d))
+            Text(
+                TimeFormatPolicy.weeklyResetString(
+                    resetAt: usage.resetAt7d,
+                    use24HourTime: use24HourTime
+                )
+            )
                 .font(.caption)
                 .foregroundStyle(ClaudeTheme.textSecondary)
+
+            if showServiceStatus {
+                serviceStatusRow
+            }
 
             // Extra Usage (only when enabled)
             if let extra = usage.extraUsage, extra.isEnabled {
@@ -208,30 +250,51 @@ struct AuthenticatedMenuView: View {
 
     // MARK: - Helpers
 
-    private func resetCountdown(date: Date, now: Date) -> String {
-        let totalMinutes = max(0, Int(date.timeIntervalSince(now) / 60))
-        let timeFormatter = DateFormatter()
-        timeFormatter.dateFormat = "HH:mm"
-        let duration: String
-        if totalMinutes >= 60 {
-            let h = totalMinutes / 60
-            let m = totalMinutes % 60
-            duration = m > 0 ? "\(h) hr \(m) min" : "\(h) hr"
-        } else {
-            duration = "\(totalMinutes) min"
+    private var serviceStatusRow: some View {
+        let status = coordinator.serviceStatusMonitor.state
+        return HStack(spacing: 4) {
+            Image(systemName: iconForServiceState(status))
+                .font(.caption)
+                .foregroundStyle(colorForServiceState(status))
+            Text(serviceText(for: status))
+                .font(.caption)
+                .foregroundStyle(ClaudeTheme.textSecondary)
         }
-        return "Resets in \(duration) (\(timeFormatter.string(from: date)))"
-    }
-
-    private func weeklyReset(date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, HH:mm"
-        return "Resets \(formatter.string(from: date))"
     }
 
     private func burnRate(usage: UsageState, now: Date) -> Double {
         let hoursUntilReset = max(0, usage.resetAt5h.timeIntervalSince(now) / 3600)
         let hoursElapsed = max(0.1, 5.0 - hoursUntilReset)
         return usage.utilization5h * 100.0 / hoursElapsed
+    }
+
+    private func serviceText(for state: ServiceHealthState) -> String {
+        switch state {
+        case .operational: return "Service: Operational"
+        case .degraded: return "Service: Degraded"
+        case .majorOutage: return "Service: Major Outage"
+        case .stale: return "Service: Stale"
+        case .unavailable: return "Service: Unavailable"
+        }
+    }
+
+    private func iconForServiceState(_ state: ServiceHealthState) -> String {
+        switch state {
+        case .operational: return "checkmark.circle.fill"
+        case .degraded: return "exclamationmark.triangle.fill"
+        case .majorOutage: return "xmark.octagon.fill"
+        case .stale: return "clock.badge.exclamationmark"
+        case .unavailable: return "questionmark.circle"
+        }
+    }
+
+    private func colorForServiceState(_ state: ServiceHealthState) -> Color {
+        switch state {
+        case .operational: return .green
+        case .degraded: return .orange
+        case .majorOutage: return .red
+        case .stale: return .yellow
+        case .unavailable: return .gray
+        }
     }
 }

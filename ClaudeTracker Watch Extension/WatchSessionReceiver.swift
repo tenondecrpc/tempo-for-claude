@@ -38,7 +38,9 @@ final class WatchSessionReceiver: NSObject, WCSessionDelegate {
             utilization7d: utilization7d,
             resetAt5h: Date(timeIntervalSince1970: resetAt5hInterval),
             resetAt7d: Date(timeIntervalSince1970: resetAt7dInterval),
-            isMocked: isMocked
+            isMocked: isMocked,
+            extraUsage: nil,
+            isDoubleLimitPromoActive: nil
         )
 
         Task { @MainActor in

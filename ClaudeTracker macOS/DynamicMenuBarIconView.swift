@@ -61,13 +61,15 @@ extension NSImage {
 struct DynamicMenuBarIconView: View {
     let usage: UsageState?
     let isAuthenticated: Bool
+    let showPercentage: Bool
     
     @State private var currentImage: Image
     @State private var currentPercentage: Double = -1.0
     
-    init(usage: UsageState?, isAuthenticated: Bool) {
+    init(usage: UsageState?, isAuthenticated: Bool, showPercentage: Bool) {
         self.usage = usage
         self.isAuthenticated = isAuthenticated
+        self.showPercentage = showPercentage
         self._currentImage = State(initialValue: Image(systemName: "chart.bar"))
     }
     
@@ -84,7 +86,7 @@ struct DynamicMenuBarIconView: View {
                     updateImage()
                 }
             
-            if let usage = usage, isAuthenticated {
+            if let usage = usage, isAuthenticated, showPercentage {
                 Text("\(Int(usage.utilization5h * 100))%")
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
             }

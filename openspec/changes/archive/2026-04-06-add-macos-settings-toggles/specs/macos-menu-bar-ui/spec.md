@@ -1,22 +1,4 @@
-## Requirements
-
-### Requirement: Popover header with title and action icons
-The menu bar popover SHALL display a header row containing "Usage for Claude" as a bold title on the left, and help (questionmark.circle) and chat (message) icon buttons on the right. A horizontal divider SHALL separate the header from the content below.
-
-#### Scenario: Header displayed in all states
-- **WHEN** the menu bar popover is opened
-- **THEN** the header row with "Usage for Claude" title and icon buttons is visible at the top
-
-### Requirement: Not-signed-in state shows lock and sign-in button
-When the user is not authenticated, the popover SHALL display a centered blue lock icon (lock.fill), "Not Signed In" as a bold headline, a subtitle "Sign in to view your Claude Usage", and a full-width coral (#E07850) "Sign In" button. A "Quit" text button in red SHALL appear at the bottom below a divider.
-
-#### Scenario: Unauthenticated popover appearance
-- **WHEN** the popover opens and the user is not authenticated
-- **THEN** the lock icon, "Not Signed In" headline, subtitle, coral "Sign In" button, and "Quit" link are displayed
-
-#### Scenario: Sign In button opens Welcome window
-- **WHEN** the user clicks the "Sign In" button
-- **THEN** the Welcome window opens as a separate centered macOS window
+## ADDED Requirements
 
 ### Requirement: Menu bar percentage text visibility follows user preference
 The menu bar item SHALL respect the Show Percentage in Menu Bar preference for authenticated usage display.
@@ -28,6 +10,8 @@ The menu bar item SHALL respect the Show Percentage in Menu Bar preference for a
 #### Scenario: Percentage text is hidden
 - **WHEN** the user disables Show Percentage in Menu Bar
 - **THEN** the menu bar item displays icon-only usage state and no percentage text
+
+## MODIFIED Requirements
 
 ### Requirement: Authenticated state shows usage dashboard
 When the user is authenticated and usage data is available, the popover SHALL display:
@@ -82,41 +66,3 @@ Settings controls (Launch at Login, Show Percentage, 24-Hour Time, Service Statu
 #### Scenario: Quit terminates the app
 - **WHEN** the user clicks "Quit"
 - **THEN** the macOS app terminates
-
-### Requirement: Logout stops session and blocks auto-restore
-When the user clicks "Logout", the app SHALL:
-1. Reset `authState.isAuthenticated` and `authState.isAwaitingCode` to `false`
-2. Set `authState.requiresExplicitSignIn = true` to block automatic session restoration
-3. Stop the usage poller
-4. Transition the popover immediately to the not-signed-in state
-
-Credentials on disk are NOT deleted — they can be reused on the next explicit sign-in. No confirmation dialog is required.
-
-The `requiresExplicitSignIn` flag ensures that reopening the menu bar popover (which triggers `onLaunch`) does NOT auto-restore the session. Only an explicit user action ("Sign in with Claude Code") resets this flag and allows credential reuse.
-
-#### Scenario: Poller stops on logout
-- **WHEN** the user clicks "Logout"
-- **THEN** the 15-minute usage polling timer is cancelled and no further API requests are made
-
-#### Scenario: Popover switches to not-signed-in immediately
-- **WHEN** the user clicks "Logout"
-- **THEN** the popover transitions to the not-signed-in state (lock icon + "Sign In" button) without app restart
-
-#### Scenario: Reopening menu bar after logout stays signed out
-- **WHEN** the user clicks "Logout" and then reopens the menu bar popover
-- **THEN** the popover shows "Not Signed In" — no auto-restore occurs even if credentials exist on disk
-
-#### Scenario: Logging out while Welcome window is open
-- **WHEN** the Welcome window is open and the user triggers logout from another path
-- **THEN** the Welcome window remains open (no automatic close — user is already in the sign-in flow)
-
-#### Scenario: Credentials reusable via explicit sign-in
-- **WHEN** the user clicks "Sign in with Claude Code" after a logout
-- **THEN** `requiresExplicitSignIn` is reset to `false`, the app checks stored credentials, and restores the session without opening the browser
-
-### Requirement: Dark theme applied to popover
-The popover content SHALL use a dark color scheme (`.preferredColorScheme(.dark)`) with ClaudeTheme colors for background, text, and accents.
-
-#### Scenario: Popover uses dark appearance
-- **WHEN** the popover opens regardless of system appearance setting
-- **THEN** the popover renders with dark navy background and light text
