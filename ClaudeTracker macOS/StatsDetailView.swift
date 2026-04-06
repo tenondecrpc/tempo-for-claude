@@ -12,6 +12,9 @@ struct StatsDetailView: View {
 
     @State private var showSession = true
     @State private var showWeekly = true
+    @State private var shareAnchorView: NSView?
+    @State private var shareErrorMessage = ""
+    @State private var showShareError = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,6 +42,11 @@ struct StatsDetailView: View {
         .background(ClaudeTheme.background)
         .preferredColorScheme(.dark)
         .frame(minWidth: 850, minHeight: 750)
+        .alert("Unable to Share Chart", isPresented: $showShareError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(shareErrorMessage)
+        }
     }
 
     // MARK: - Header
@@ -100,6 +108,19 @@ struct StatsDetailView: View {
                 .font(.caption)
                 .foregroundStyle(ClaudeTheme.textSecondary)
                 .frame(width: 80)
+
+                Button {
+                    shareChartImage()
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(canShareCurrentRange ? ClaudeTheme.textSecondary : ClaudeTheme.textSecondary.opacity(0.5))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canShareCurrentRange)
+                .background(ShareAnchorView(anchorView: $shareAnchorView))
+                .help(canShareCurrentRange ? "Share chart image" : "No chart data available for sharing")
             }
 
             if timeRange == .custom {
@@ -129,7 +150,11 @@ struct StatsDetailView: View {
                 }
             }
 
-            if history.snapshots.isEmpty {
+            let visibleSnapshots = visibleSnapshotsForCurrentRange
+            let sessionSnapshots = sessionSnapshotsForDisplay(from: visibleSnapshots)
+            let sessionSegments = splitSessionSegments(sessionSnapshots, maxGap: maxGapForCurrentRange)
+
+            if visibleSnapshots.isEmpty {
                 HStack {
                     Spacer()
                     Text("No history yet — check back after the next poll")
@@ -139,8 +164,6 @@ struct StatsDetailView: View {
                 }
                 .padding(.vertical, 60)
             } else {
-                let visibleSnapshots = filteredSnapshots().sorted(by: { $0.date < $1.date })
-                
                 Chart {
                     // 80% warning threshold
                     RuleMark(y: .value("Warning", 80))
@@ -151,21 +174,59 @@ struct StatsDetailView: View {
                     RuleMark(x: .value("Now", Date()))
                         .foregroundStyle(Color(red: 0.16, green: 0.50, blue: 0.95).opacity(0.4))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                        .annotation(position: .top, alignment: .trailing) {
-                            Text("Now")
-                                .font(.system(size: 9))
-                                .foregroundStyle(ClaudeTheme.textSecondary)
+
+                    if showWeekly {
+                        ForEach(visibleSnapshots) { snap in
+                            AreaMark(
+                                x: .value("Time", snap.date),
+                                yStart: .value("Weekly Area Min", 0),
+                                yEnd: .value("Weekly Area Max", snap.utilization7d * 100)
+                            )
+                            .interpolationMethod(.linear)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.8, green: 0.3, blue: 0.2).opacity(0.16),
+                                        Color(red: 0.8, green: 0.3, blue: 0.2).opacity(0.02)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
                         }
+                    }
 
                     if showSession {
-                        ForEach(visibleSnapshots) { snap in
-                            LineMark(
-                                x: .value("Time", snap.date),
-                                y: .value("Session", snap.utilization5h * 100)
-                            )
-                            .foregroundStyle(by: .value("Type", "Session"))
-                            .lineStyle(StrokeStyle(lineWidth: 2.5))
-                            .interpolationMethod(.catmullRom)
+                        ForEach(Array(sessionSegments.enumerated()), id: \.offset) { segmentIndex, segment in
+                            let sessionSeriesKey = "session-\(segmentIndex)"
+                            ForEach(segment) { snap in
+                                AreaMark(
+                                    x: .value("Time", snap.date),
+                                    yStart: .value("Session Area Min", 0),
+                                    yEnd: .value("Session Area Max", snap.utilization5h * 100),
+                                    series: .value("Series", sessionSeriesKey)
+                                )
+                                .interpolationMethod(.linear)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [
+                                            Color(red: 0.16, green: 0.50, blue: 0.95).opacity(0.34),
+                                            Color(red: 0.16, green: 0.50, blue: 0.95).opacity(0.08)
+                                        ],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+
+                                LineMark(
+                                    x: .value("Time", snap.date),
+                                    y: .value("Session", snap.utilization5h * 100),
+                                    series: .value("Series", sessionSeriesKey)
+                                )
+                                .foregroundStyle(Color(red: 0.16, green: 0.50, blue: 0.95))
+                                .lineStyle(StrokeStyle(lineWidth: 2.5))
+                                .interpolationMethod(.catmullRom)
+                            }
                         }
                     }
                     if showWeekly {
@@ -174,16 +235,12 @@ struct StatsDetailView: View {
                                 x: .value("Time", snap.date),
                                 y: .value("Weekly", snap.utilization7d * 100)
                             )
-                            .foregroundStyle(by: .value("Type", "Weekly"))
+                            .foregroundStyle(Color(red: 0.8, green: 0.3, blue: 0.2))
                             .lineStyle(StrokeStyle(lineWidth: 2.5))
                             .interpolationMethod(.catmullRom)
                         }
                     }
                 }
-                .chartForegroundStyleScale([
-                    "Session": Color(red: 0.16, green: 0.50, blue: 0.95),
-                    "Weekly": Color(red: 0.8, green: 0.3, blue: 0.2)
-                ])
                 .chartLegend(.hidden)
                 .chartYAxis {
                     AxisMarks(values: [0, 25, 50, 75, 100]) { value in
@@ -283,6 +340,92 @@ struct StatsDetailView: View {
         return history.snapshots.filter { $0.date >= cutoff }
     }
 
+    private var maxGapForCurrentRange: TimeInterval {
+        switch timeRange {
+        case .hours5, .hours24:
+            return 90 * 60
+        case .days7:
+            return 3 * 3600
+        case .days30:
+            return 12 * 3600
+        case .days90:
+            return 24 * 3600
+        case .custom:
+            let customSpan = customEnd.timeIntervalSince(customStart)
+            if customSpan <= 24 * 3600 { return 90 * 60 }
+            if customSpan <= 7 * 24 * 3600 { return 3 * 3600 }
+            if customSpan <= 30 * 24 * 3600 { return 12 * 3600 }
+            return 24 * 3600
+        }
+    }
+
+    private func sessionSnapshotsForDisplay(from snapshots: [UsageSnapshot]) -> [UsageSnapshot] {
+        let sorted = snapshots.sorted(by: { $0.date < $1.date })
+        guard sorted.count > 1 else { return sorted }
+
+        let riseEpsilon = 0.005
+        if let riseIndex = sorted.indices.dropFirst().first(where: { index in
+            sorted[index].utilization5h - sorted[index - 1].utilization5h > riseEpsilon
+        }) {
+            let startIndex = max(0, riseIndex - 1)
+            return Array(sorted[startIndex...])
+        }
+
+        let maxSession = sorted.map(\.utilization5h).max() ?? 0
+        return maxSession <= riseEpsilon ? [] : sorted
+    }
+
+    private func splitSessionSegments(_ snapshots: [UsageSnapshot], maxGap: TimeInterval) -> [[UsageSnapshot]] {
+        guard !snapshots.isEmpty else { return [] }
+        let sorted = snapshots.sorted(by: { $0.date < $1.date })
+        var segments: [[UsageSnapshot]] = []
+        var currentSegment: [UsageSnapshot] = [sorted[0]]
+        let resetDropThreshold = 0.25
+
+        for snapshot in sorted.dropFirst() {
+            guard let last = currentSegment.last else { continue }
+            let hasLargeGap = snapshot.date.timeIntervalSince(last.date) > maxGap
+            let hasResetDrop = (last.utilization5h - snapshot.utilization5h) > resetDropThreshold
+            if hasLargeGap || hasResetDrop {
+                segments.append(currentSegment)
+                currentSegment = [snapshot]
+            } else {
+                currentSegment.append(snapshot)
+            }
+        }
+
+        if !currentSegment.isEmpty {
+            segments.append(currentSegment)
+        }
+        return segments
+    }
+
+    private func meaningfulSnapshots(from snapshots: [UsageSnapshot]) -> [UsageSnapshot] {
+        let sorted = snapshots.sorted(by: { $0.date < $1.date })
+        guard sorted.count > 1 else { return sorted }
+
+        let epsilon = 0.0001
+        var lastMeaningfulIndex = sorted.count - 1
+
+        while lastMeaningfulIndex > 0 {
+            let current = sorted[lastMeaningfulIndex]
+            let previous = sorted[lastMeaningfulIndex - 1]
+
+            let sessionChanged = abs(current.utilization5h - previous.utilization5h) > epsilon
+            let weeklyChanged = abs(current.utilization7d - previous.utilization7d) > epsilon
+
+            if sessionChanged || weeklyChanged {
+                break
+            }
+            lastMeaningfulIndex -= 1
+        }
+
+        if lastMeaningfulIndex == sorted.count - 1 {
+            return sorted
+        }
+        return Array(sorted[...lastMeaningfulIndex])
+    }
+
     private func dateDomain() -> ClosedRange<Date> {
         let now = Date()
         let interval: TimeInterval
@@ -314,6 +457,14 @@ struct StatsDetailView: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    private var visibleSnapshotsForCurrentRange: [UsageSnapshot] {
+        meaningfulSnapshots(from: filteredSnapshots())
+    }
+
+    private var canShareCurrentRange: Bool {
+        !visibleSnapshotsForCurrentRange.isEmpty
     }
 
     // MARK: - Heatmap Section
@@ -689,6 +840,89 @@ struct StatsDetailView: View {
         try? csv.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    private func shareChartImage() {
+        do {
+            let imageURL = try buildShareImageFileURL()
+            presentSharingPicker(with: imageURL)
+        } catch ShareError.noData {
+            shareErrorMessage = "No chart data is available for the selected time range."
+            showShareError = true
+        } catch ShareError.unsupportedRenderer {
+            shareErrorMessage = "Image sharing requires macOS 13 or newer."
+            showShareError = true
+        } catch ShareError.renderFailed {
+            shareErrorMessage = "Could not render the chart image."
+            showShareError = true
+        } catch ShareError.encodingFailed {
+            shareErrorMessage = "Could not encode the rendered image as PNG."
+            showShareError = true
+        } catch ShareError.writeFailed {
+            shareErrorMessage = "Could not write the PNG file to a temporary location."
+            showShareError = true
+        } catch {
+            shareErrorMessage = "An unexpected error occurred while preparing the share image."
+            showShareError = true
+        }
+    }
+
+    private func buildShareImageFileURL() throws -> URL {
+        let snapshots = visibleSnapshotsForCurrentRange
+        guard !snapshots.isEmpty else { throw ShareError.noData }
+        guard #available(macOS 13.0, *) else { throw ShareError.unsupportedRenderer }
+
+        let exportDate = Date()
+        let selectedDomain = dateDomain()
+        let cardView = StatsShareCardView(
+            timeRangeLabel: timeRange.rawValue,
+            xDomain: selectedDomain,
+            maxGap: maxGapForCurrentRange,
+            snapshots: snapshots,
+            avgSessionLabel: avgSession,
+            avgWeeklyLabel: avgWeekly,
+            messagesLabel: localDB.projectStats.reduce(0) { $0 + $1.messages7d }.formatted(),
+            sessionsLabel: localDB.projectStats.reduce(0) { $0 + $1.sessions7d }.formatted(),
+            exportedAt: exportDate
+        )
+        .frame(width: 1060, height: 740)
+
+        let renderer = ImageRenderer(content: cardView)
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2.0
+
+        guard let nsImage = renderer.nsImage else { throw ShareError.renderFailed }
+        guard
+            let tiffData = nsImage.tiffRepresentation,
+            let bitmap = NSBitmapImageRep(data: tiffData),
+            let pngData = bitmap.representation(using: .png, properties: [:])
+        else {
+            throw ShareError.encodingFailed
+        }
+
+        let filename = "claude-usage-stats-\(Int(exportDate.timeIntervalSince1970)).png"
+        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+
+        do {
+            try pngData.write(to: outputURL, options: .atomic)
+            return outputURL
+        } catch {
+            throw ShareError.writeFailed
+        }
+    }
+
+    private func presentSharingPicker(with imageURL: URL) {
+        let picker = NSSharingServicePicker(items: [imageURL])
+        if let anchorView = shareAnchorView {
+            picker.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .minY)
+            return
+        }
+
+        guard let windowView = NSApp.keyWindow?.contentView else {
+            shareErrorMessage = "Could not determine where to present the share picker."
+            showShareError = true
+            return
+        }
+        picker.show(relativeTo: windowView.bounds, of: windowView, preferredEdge: .minY)
+    }
+
     // Derived stats
     private var avgSession: String {
         let values = history.snapshots.map(\.utilization5h)
@@ -717,6 +951,14 @@ struct StatsDetailView: View {
         let cal = Calendar.current
         let grouped = Dictionary(grouping: history.snapshots) { cal.startOfDay(for: $0.date) }
         return grouped.values.filter { ($0.map(\.utilization5h).max() ?? 0) >= 0.9 }.count
+    }
+
+    private enum ShareError: Error {
+        case noData
+        case unsupportedRenderer
+        case renderFailed
+        case encodingFailed
+        case writeFailed
     }
 }
 
@@ -835,4 +1077,285 @@ struct ActivityHeatmapView: View {
         f.dateFormat = "yyyy-MM-dd"
         return f
     }()
+}
+
+private struct StatsShareCardView: View {
+    let timeRangeLabel: String
+    let xDomain: ClosedRange<Date>
+    let maxGap: TimeInterval
+    let snapshots: [UsageSnapshot]
+    let avgSessionLabel: String
+    let avgWeeklyLabel: String
+    let messagesLabel: String
+    let sessionsLabel: String
+    let exportedAt: Date
+
+    private static let exportDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .long
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private var sessionSnapshots: [UsageSnapshot] {
+        sessionSnapshotsForDisplay(from: snapshots)
+    }
+
+    private var sessionSegments: [[UsageSnapshot]] {
+        splitSessionSegments(sessionSnapshots, maxGap: maxGap)
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(Color(red: 0.08, green: 0.09, blue: 0.12))
+
+            VStack(alignment: .leading, spacing: 22) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Usage For Claude")
+                            .font(.system(size: 40, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    Spacer()
+                    Text(rangeLabel)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.78))
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(timeRangeLabel)
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(.white)
+
+                    Chart {
+                        RuleMark(y: .value("Warning", 80))
+                            .foregroundStyle(Color(red: 0.8, green: 0.3, blue: 0.2).opacity(0.45))
+                            .lineStyle(StrokeStyle(lineWidth: 2, dash: [8, 6]))
+
+                        ForEach(snapshots) { snap in
+                            AreaMark(
+                                x: .value("Time", snap.date),
+                                yStart: .value("Weekly Area Min", 0),
+                                yEnd: .value("Weekly Area Max", snap.utilization7d * 100)
+                            )
+                            .interpolationMethod(.linear)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.8, green: 0.3, blue: 0.2).opacity(0.16),
+                                        Color(red: 0.8, green: 0.3, blue: 0.2).opacity(0.02)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                        }
+
+                        ForEach(Array(sessionSegments.enumerated()), id: \.offset) { segmentIndex, segment in
+                            let sessionSeriesKey = "session-\(segmentIndex)"
+                            ForEach(segment) { snap in
+                                AreaMark(
+                                    x: .value("Time", snap.date),
+                                    yStart: .value("Session Area Min", 0),
+                                    yEnd: .value("Session Area Max", snap.utilization5h * 100),
+                                    series: .value("Series", sessionSeriesKey)
+                                )
+                                .interpolationMethod(.linear)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [
+                                            Color(red: 0.16, green: 0.50, blue: 0.95).opacity(0.34),
+                                            Color(red: 0.16, green: 0.50, blue: 0.95).opacity(0.08)
+                                        ],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+
+                                LineMark(
+                                    x: .value("Time", snap.date),
+                                    y: .value("Session", snap.utilization5h * 100),
+                                    series: .value("Series", sessionSeriesKey)
+                                )
+                                .foregroundStyle(Color(red: 0.16, green: 0.50, blue: 0.95))
+                                .lineStyle(StrokeStyle(lineWidth: 4))
+                                .interpolationMethod(.catmullRom)
+                            }
+                        }
+
+                        ForEach(snapshots) { snap in
+                            LineMark(
+                                x: .value("Time", snap.date),
+                                y: .value("Weekly", snap.utilization7d * 100)
+                            )
+                            .foregroundStyle(Color(red: 0.8, green: 0.3, blue: 0.2))
+                            .lineStyle(StrokeStyle(lineWidth: 4))
+                            .interpolationMethod(.catmullRom)
+                        }
+                    }
+                    .chartLegend(.hidden)
+                    .chartYScale(domain: 0...105)
+                    .chartXScale(domain: xDomain)
+                    .chartXAxis {
+                        AxisMarks(values: .automatic) { _ in
+                            AxisGridLine()
+                                .foregroundStyle(Color.white.opacity(0.12))
+                            AxisValueLabel()
+                                .foregroundStyle(Color.white.opacity(0.58))
+                        }
+                    }
+                    .chartYAxis {
+                        AxisMarks(values: [0, 25, 50, 75, 100]) { value in
+                            AxisGridLine()
+                                .foregroundStyle(Color.white.opacity(0.12))
+                            AxisValueLabel {
+                                if let value = value.as(Double.self) {
+                                    Text("\(Int(value))%")
+                                        .foregroundStyle(Color.white.opacity(0.58))
+                                }
+                            }
+                        }
+                    }
+                    .frame(height: 320)
+
+                    HStack(spacing: 26) {
+                        legendItem(color: Color(red: 0.16, green: 0.50, blue: 0.95), title: "Session")
+                        legendItem(color: Color(red: 0.8, green: 0.3, blue: 0.2), title: "Weekly")
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 20)
+                .background(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.white.opacity(0.04))
+                )
+
+                HStack(spacing: 16) {
+                    summaryCard(title: "Avg Session", value: avgSessionLabel)
+                    summaryCard(title: "Avg Weekly", value: avgWeeklyLabel)
+                    summaryCard(title: "Messages", value: messagesLabel)
+                    summaryCard(title: "Sessions", value: sessionsLabel)
+                }
+
+                HStack {
+                    Text("Usage For Claude")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text(Self.exportDateFormatter.string(from: exportedAt))
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.82))
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color(red: 0.78, green: 0.42, blue: 0.31))
+                )
+            }
+            .padding(28)
+        }
+    }
+
+    private var rangeLabel: String {
+        "\(Self.compactDateFormatter.string(from: xDomain.lowerBound)) - \(Self.compactDateFormatter.string(from: xDomain.upperBound))"
+    }
+
+    private static let compactDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, HH:mm"
+        return formatter
+    }()
+
+    private func sessionSnapshotsForDisplay(from snapshots: [UsageSnapshot]) -> [UsageSnapshot] {
+        let sorted = snapshots.sorted(by: { $0.date < $1.date })
+        guard sorted.count > 1 else { return sorted }
+
+        let riseEpsilon = 0.005
+        if let riseIndex = sorted.indices.dropFirst().first(where: { index in
+            sorted[index].utilization5h - sorted[index - 1].utilization5h > riseEpsilon
+        }) {
+            let startIndex = max(0, riseIndex - 1)
+            return Array(sorted[startIndex...])
+        }
+
+        let maxSession = sorted.map(\.utilization5h).max() ?? 0
+        return maxSession <= riseEpsilon ? [] : sorted
+    }
+
+    private func splitSessionSegments(_ snapshots: [UsageSnapshot], maxGap: TimeInterval) -> [[UsageSnapshot]] {
+        guard !snapshots.isEmpty else { return [] }
+        let sorted = snapshots.sorted(by: { $0.date < $1.date })
+        var result: [[UsageSnapshot]] = []
+        var current: [UsageSnapshot] = [sorted[0]]
+        let resetDropThreshold = 0.25
+
+        for snapshot in sorted.dropFirst() {
+            guard let previous = current.last else { continue }
+            let hasLargeGap = snapshot.date.timeIntervalSince(previous.date) > maxGap
+            let hasResetDrop = (previous.utilization5h - snapshot.utilization5h) > resetDropThreshold
+            if hasLargeGap || hasResetDrop {
+                result.append(current)
+                current = [snapshot]
+            } else {
+                current.append(snapshot)
+            }
+        }
+
+        if !current.isEmpty {
+            result.append(current)
+        }
+        return result
+    }
+
+    @ViewBuilder
+    private func legendItem(color: Color, title: String) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(color)
+                .frame(width: 10, height: 10)
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.9))
+        }
+    }
+
+    @ViewBuilder
+    private func summaryCard(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.72))
+            Text(value)
+                .font(.system(size: 34, weight: .bold))
+                .foregroundStyle(Color(red: 0.95, green: 0.56, blue: 0.44))
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+        )
+    }
+}
+
+private struct ShareAnchorView: NSViewRepresentable {
+    @Binding var anchorView: NSView?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            anchorView = view
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            anchorView = nsView
+        }
+    }
 }
