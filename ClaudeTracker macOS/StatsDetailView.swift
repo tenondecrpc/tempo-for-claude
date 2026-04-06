@@ -361,7 +361,8 @@ struct StatsDetailView: View {
     private func warningCard(usage: UsageState, now: Date) -> some View {
         let rate = burnRate(usage: usage, now: now)
         let onTrack = rate < 20
-        let hoursToLimit: Double? = (!onTrack && rate > 0) ? (1.0 - usage.utilization5h) * 100.0 / rate : nil
+        let remaining = 1.0 - usage.utilization5h
+        let hoursToLimit: Double? = (!onTrack && rate > 0 && remaining > 0) ? remaining * 100.0 / rate : nil
 
         return HStack(alignment: .top, spacing: 16) {
             Image(systemName: onTrack ? "checkmark.circle" : "clock.badge.exclamationmark")
@@ -377,10 +378,14 @@ struct StatsDetailView: View {
                     Text("At current rate, you'll hit your weekly limit in less than \(etaString(hours: h))")
                         .font(.caption)
                         .foregroundStyle(Color(red: 0.8, green: 0.3, blue: 0.2))
-                } else {
+                } else if onTrack {
                     Text("Your usage is well within normal limits.")
                         .font(.caption)
                         .foregroundStyle(ClaudeTheme.textSecondary)
+                } else {
+                    Text("You've reached your session limit.")
+                        .font(.caption)
+                        .foregroundStyle(Color(red: 0.8, green: 0.3, blue: 0.2))
                 }
 
                 Text("Current rate: \(String(format: "%.1f", rate))%/hr")
@@ -396,7 +401,19 @@ struct StatsDetailView: View {
     }
 
     private func subscriptionCard() -> some View {
-        HStack(alignment: .top, spacing: 16) {
+        let pct = avgWeeklyValue
+        let message: String
+        if history.snapshots.isEmpty {
+            message = "Not enough data yet to evaluate subscription value."
+        } else if pct < 0.30 {
+            message = "Moderate usage. You have plenty of headroom in your weekly allocation."
+        } else if pct < 0.70 {
+            message = "Good utilization! You're making solid use of your subscription."
+        } else {
+            message = "High utilization. You're getting excellent value from your subscription."
+        }
+
+        return HStack(alignment: .top, spacing: 16) {
             Image(systemName: "dollarsign.circle")
                 .font(.system(size: 24))
                 .foregroundStyle(ClaudeTheme.textSecondary)
@@ -405,7 +422,7 @@ struct StatsDetailView: View {
                 Text("Subscription Value")
                     .font(.subheadline.bold())
                     .foregroundStyle(ClaudeTheme.textPrimary)
-                Text("Good utilization! You're making solid use of your subscription.")
+                Text(message)
                     .font(.caption)
                     .foregroundStyle(ClaudeTheme.textSecondary)
                 Text("Average weekly usage: \(avgWeekly)")
@@ -450,6 +467,12 @@ struct StatsDetailView: View {
                 Text("Claude Code")
                     .font(.headline)
                     .foregroundStyle(ClaudeTheme.textPrimary)
+                Text("7 days")
+                    .font(.caption.bold())
+                    .foregroundStyle(ClaudeTheme.accent)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(ClaudeTheme.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
             }
 
             if !localDB.isAvailable {
@@ -470,17 +493,19 @@ struct StatsDetailView: View {
         let sonnet = models.filter { $0.key.contains("sonnet") }.values.reduce(0, +)
         let haiku = models.filter { $0.key.contains("haiku") }.values.reduce(0, +)
 
-        let msgCount = localDB.totalMessages > 0 ? localDB.totalMessages : localDB.messages7d
-        let sessionCount = localDB.totalSessions > 0 ? localDB.totalSessions : localDB.sessions7d
+        let msgCount = localDB.projectStats.reduce(0) { $0 + $1.messages7d }
+        let toolCount = localDB.projectStats.reduce(0) { $0 + $1.toolCalls7d }
+        let sessionCount = localDB.projectStats.reduce(0) { $0 + $1.sessions7d }
+        let costEquiv7d = localDB.projectStats.reduce(0.0) { $0 + $1.costEquiv7d }
 
         return HStack(spacing: 0) {
             statItem(icon: "bubble.left", label: "Messages", value: msgCount.formatted())
                 .frame(maxWidth: .infinity, alignment: .leading)
-            statItem(icon: "wrench.and.screwdriver", label: "Tool Calls", value: localDB.toolCalls7d.formatted())
+            statItem(icon: "wrench.and.screwdriver", label: "Tool Calls", value: toolCount.formatted())
                 .frame(maxWidth: .infinity, alignment: .leading)
             statItem(icon: "square.stack.3d.up", label: "Sessions", value: sessionCount.formatted())
                 .frame(maxWidth: .infinity, alignment: .leading)
-            statItem(icon: "dollarsign.circle", label: "API Equiv.", value: computeCostEquiv())
+            statItem(icon: "dollarsign.circle", label: "API Equiv.", value: costEquiv7d > 0 ? String(format: "$%.0f", costEquiv7d) : "—")
                 .frame(maxWidth: .infinity, alignment: .leading)
             statItem(icon: "network", label: "Subagents", value: localDB.totalSubagents.formatted())
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -574,19 +599,19 @@ struct StatsDetailView: View {
                     .foregroundStyle(ClaudeTheme.textSecondary)
                     .padding(.top, 8)
             } else {
-                ForEach(localDB.projectStats) { stat in
+                ForEach(localDB.projectStats.filter { $0.hasActivity7d }) { stat in
                     HStack {
                         Text(stat.displayName)
                             .font(.caption)
                             .foregroundStyle(ClaudeTheme.textPrimary)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        
+
                         Group {
-                            Text("\(stat.sessionCount)").frame(width: 80, alignment: .trailing)
-                            Text("—").frame(width: 80, alignment: .trailing)
-                            Text("—").frame(width: 80, alignment: .trailing)
-                            Text("—").frame(width: 80, alignment: .trailing)
-                            Text("—").frame(width: 80, alignment: .trailing)
+                            Text(stat.sessions7d > 0 ? "\(stat.sessions7d)" : "—").frame(width: 80, alignment: .trailing)
+                            Text(stat.messages7d > 0 ? stat.messages7d.formatted() : "—").frame(width: 80, alignment: .trailing)
+                            Text(stat.toolCalls7d > 0 ? stat.toolCalls7d.formatted() : "—").frame(width: 80, alignment: .trailing)
+                            Text(stat.totalTokens7d > 0 ? formatTokens(stat.totalTokens7d) : "—").frame(width: 80, alignment: .trailing)
+                            Text(stat.costEquiv7d > 0 ? String(format: "$%.2f", stat.costEquiv7d) : "—").frame(width: 80, alignment: .trailing)
                         }
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(ClaudeTheme.textPrimary)
@@ -635,7 +660,13 @@ struct StatsDetailView: View {
     }
 
     private func etaString(hours: Double) -> String {
-        hours < 1 ? "\(Int(hours * 60)) min" : String(format: "%.1f hr", hours)
+        if hours >= 1 {
+            let h = Int(hours)
+            let mins = Int((hours - Double(h)) * 60)
+            return mins > 0 ? "~\(h) hr \(mins) min" : "~\(h) hr"
+        }
+        let mins = Int(hours * 60)
+        return mins > 0 ? "\(mins) min" : "< 1 min"
     }
 
     private func burnRate(usage: UsageState, now: Date) -> Double {
@@ -669,6 +700,12 @@ struct StatsDetailView: View {
         let values = history.snapshots.map(\.utilization7d)
         guard !values.isEmpty else { return "—" }
         return "\(Int(values.reduce(0, +) / Double(values.count) * 100))%"
+    }
+
+    private var avgWeeklyValue: Double {
+        let values = history.snapshots.map(\.utilization7d)
+        guard !values.isEmpty else { return 0 }
+        return values.reduce(0, +) / Double(values.count)
     }
 
     private var peakSession: String {

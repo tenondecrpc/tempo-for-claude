@@ -209,10 +209,18 @@ struct AuthenticatedMenuView: View {
     // MARK: - Helpers
 
     private func resetCountdown(date: Date, now: Date) -> String {
-        let minutes = max(0, Int(date.timeIntervalSince(now) / 60))
+        let totalMinutes = max(0, Int(date.timeIntervalSince(now) / 60))
         let timeFormatter = DateFormatter()
         timeFormatter.dateFormat = "HH:mm"
-        return "Resets in \(minutes) min (\(timeFormatter.string(from: date)))"
+        let duration: String
+        if totalMinutes >= 60 {
+            let h = totalMinutes / 60
+            let m = totalMinutes % 60
+            duration = m > 0 ? "\(h) hr \(m) min" : "\(h) hr"
+        } else {
+            duration = "\(totalMinutes) min"
+        }
+        return "Resets in \(duration) (\(timeFormatter.string(from: date)))"
     }
 
     private func weeklyReset(date: Date) -> String {
