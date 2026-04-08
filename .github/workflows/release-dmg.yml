@@ -38,7 +38,7 @@ jobs:
         run: |
           mkdir -p ${{ runner.temp }}/app
           cp -R "${{ runner.temp }}/Tempo.xcarchive/Products/Applications/TempoForClaude.app" \
-            "${{ runner.temp }}/app/Tempo.app"
+            "${{ runner.temp }}/app/TempoForClaude.app"
 
       - name: Create DMG
         run: |
@@ -48,7 +48,7 @@ jobs:
             --window-pos 200 120 \
             --window-size 600 400 \
             --icon-size 100 \
-            --icon "Tempo.app" 175 178 \
+            --icon "TempoForClaude.app" 175 178 \
             --app-drop-link 425 178 \
             --no-internet-enable \
             "${{ runner.temp }}/Tempo-${{ github.ref_name }}.dmg" \
