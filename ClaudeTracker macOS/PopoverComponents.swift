@@ -160,8 +160,8 @@ struct MenuBarHeaderView: View {
                 Spacer()
                 // Service status dot
                 Circle()
-                    .fill(colorForServiceState(serviceState))
-                    .frame(width: 8, height: 8)
+                    .fill(dotColor)
+                    .frame(width: serviceState == .operational ? 8 : 9, height: serviceState == .operational ? 8 : 9)
                     .opacity(serviceState == .operational ? 0.4 : 1.0)
                 if let onRefresh {
                     Button {
@@ -185,16 +185,73 @@ struct MenuBarHeaderView: View {
             .padding(.vertical, 12)
             Divider()
                 .overlay(TempoTheme.progressTrack)
+            if serviceState != .operational {
+                ServiceStatusBannerView(state: serviceState)
+            }
         }
     }
 
-    private func colorForServiceState(_ state: ServiceHealthState) -> Color {
-        switch state {
+    private var dotColor: Color {
+        switch serviceState {
         case .operational: return TempoTheme.success
-        case .degraded: return TempoTheme.warning
+        case .degraded:    return TempoTheme.warning
         case .majorOutage: return TempoTheme.critical
-        case .stale: return TempoTheme.warning
+        case .stale:       return TempoTheme.warning
         case .unavailable: return TempoTheme.textSecondary
+        }
+    }
+}
+
+// MARK: - ServiceStatusBannerView
+
+struct ServiceStatusBannerView: View {
+    let state: ServiceHealthState
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Rectangle()
+                .fill(bannerColor)
+                .frame(width: 3)
+            Image(systemName: bannerIcon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(bannerColor)
+            Text(bannerLabel)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(TempoTheme.textPrimary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 7)
+        .padding(.trailing, 16)
+        .background(bannerColor.opacity(0.08))
+    }
+
+    private var bannerColor: Color {
+        switch state {
+        case .majorOutage: return TempoTheme.critical
+        case .degraded, .stale: return TempoTheme.warning
+        case .unavailable: return TempoTheme.textSecondary
+        case .operational: return .clear
+        }
+    }
+
+    private var bannerIcon: String {
+        switch state {
+        case .majorOutage: return "exclamationmark.triangle.fill"
+        case .degraded:    return "exclamationmark.circle.fill"
+        case .stale:       return "clock.badge.exclamationmark.fill"
+        case .unavailable: return "questionmark.circle.fill"
+        case .operational: return ""
+        }
+    }
+
+    private var bannerLabel: String {
+        switch state {
+        case .majorOutage: return "Major outage · claude.ai"
+        case .degraded:    return "Degraded performance · claude.ai"
+        case .stale:       return "Status data may be outdated"
+        case .unavailable: return "Service status unavailable"
+        case .operational: return ""
         }
     }
 }
