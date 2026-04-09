@@ -32,7 +32,11 @@ final class iCloudUsageReader: NSObject {
         q.predicate = NSPredicate(
             format: "%K == %@", NSMetadataItemFSNameKey, "usage.json"
         )
-        q.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
+        if let documentsScope = Self.iCloudDocumentsScope() {
+            q.searchScopes = [documentsScope]
+        } else {
+            q.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
+        }
 
         NotificationCenter.default.addObserver(
             self,
@@ -67,6 +71,12 @@ final class iCloudUsageReader: NSObject {
     /// Restart the query to pick up iCloud changes that occurred while backgrounded (Task 5.3).
     func restart() {
         start()
+    }
+
+    private static func iCloudDocumentsScope() -> URL? {
+        FileManager.default
+            .url(forUbiquityContainerIdentifier: ClaudeTrackerICloud.containerIdentifier)?
+            .appendingPathComponent("Documents", isDirectory: true)
     }
 
     // MARK: - Query Callbacks
