@@ -105,7 +105,12 @@ struct ClaudeTrackerMacApp: App {
             MenuBarIconView(
                 usage: coordinator.poller.latestUsage,
                 isAuthenticated: coordinator.authState.isAuthenticated,
-                showPercentage: coordinator.settings.showPercentageInMenuBar
+                show5hPercentage: coordinator.settings.show5hPercentage,
+                show5hResetTime: coordinator.settings.show5hResetTime,
+                show7dPercentage: coordinator.settings.show7dPercentage,
+                show7dResetTime: coordinator.settings.show7dResetTime,
+                showExtraUsageCredits: coordinator.settings.showExtraUsageCredits,
+                use24HourTime: coordinator.settings.use24HourTime
             )
         }
         .menuBarExtraStyle(.window)
@@ -118,6 +123,11 @@ struct ClaudeTrackerMacApp: App {
 
         Window("Tempo for Claude", id: "stats-detail") {
             DetailWindowView(coordinator: coordinator, history: coordinator.history, localDB: coordinator.localDB)
+        }
+        .windowResizability(.contentSize)
+
+        Settings {
+            PreferencesWindowView(coordinator: coordinator)
         }
         .windowResizability(.contentSize)
     }

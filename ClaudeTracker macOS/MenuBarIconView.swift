@@ -61,15 +61,34 @@ extension NSImage {
 struct MenuBarIconView: View {
     let usage: UsageState?
     let isAuthenticated: Bool
-    let showPercentage: Bool
+    let show5hPercentage: Bool
+    let show5hResetTime: Bool
+    let show7dPercentage: Bool
+    let show7dResetTime: Bool
+    let showExtraUsageCredits: Bool
+    let use24HourTime: Bool
 
     @State private var currentImage: Image
     @State private var currentPercentage: Double = -1.0
 
-    init(usage: UsageState?, isAuthenticated: Bool, showPercentage: Bool) {
+    init(
+        usage: UsageState?,
+        isAuthenticated: Bool,
+        show5hPercentage: Bool,
+        show5hResetTime: Bool,
+        show7dPercentage: Bool,
+        show7dResetTime: Bool,
+        showExtraUsageCredits: Bool,
+        use24HourTime: Bool
+    ) {
         self.usage = usage
         self.isAuthenticated = isAuthenticated
-        self.showPercentage = showPercentage
+        self.show5hPercentage = show5hPercentage
+        self.show5hResetTime = show5hResetTime
+        self.show7dPercentage = show7dPercentage
+        self.show7dResetTime = show7dResetTime
+        self.showExtraUsageCredits = showExtraUsageCredits
+        self.use24HourTime = use24HourTime
         self._currentImage = State(initialValue: Image(systemName: "circle.dotted"))
     }
 
@@ -86,12 +105,62 @@ struct MenuBarIconView: View {
                     updateImage()
                 }
 
-            if let usage = usage, isAuthenticated, showPercentage {
-                Text("\(Int(usage.utilization5h * 100))%")
+            if let label = labelText {
+                Text(label)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
             }
         }
     }
+
+    // MARK: - Label
+
+    private var labelText: String? {
+        guard let usage = usage, isAuthenticated else { return nil }
+
+        var groups: [String] = []
+
+        // 5h group: "5h 19% 01:00" — prefix makes the window clear at a glance
+        var fiveHourParts: [String] = []
+        if show5hPercentage {
+            fiveHourParts.append("\(Int(usage.utilization5h * 100))%")
+        }
+        if show5hResetTime {
+            fiveHourParts.append(TimeFormatPolicy.menuBarClockString(from: usage.resetAt5h, use24HourTime: use24HourTime))
+        }
+        if !fiveHourParts.isEmpty {
+            groups.append("5h " + fiveHourParts.joined(separator: " "))
+        }
+
+        // 7d group: "7d 14% 12:00"
+        var sevenDayParts: [String] = []
+        if show7dPercentage {
+            sevenDayParts.append("\(Int(usage.utilization7d * 100))%")
+        }
+        if show7dResetTime {
+            sevenDayParts.append(TimeFormatPolicy.menuBarDayString(from: usage.resetAt7d))
+        }
+        if !sevenDayParts.isEmpty {
+            groups.append("7d " + sevenDayParts.joined(separator: " "))
+        }
+
+        // Extra usage credits — show whenever extra usage is enabled by the API,
+        // not just when at 100% utilization
+        if showExtraUsageCredits,
+           let extra = usage.extraUsage,
+           extra.isEnabled,
+           let used = extra.usedCreditsAmount,
+           let limit = extra.monthlyLimitAmount {
+            let usedStr = String(format: "%.2f", used)
+            let limitStr = limit.truncatingRemainder(dividingBy: 1) == 0
+                ? String(Int(limit))
+                : String(format: "%.2f", limit)
+            groups.append("$\(usedStr)/$\(limitStr)")
+        }
+
+        return groups.isEmpty ? nil : groups.joined(separator: " · ")
+    }
+
+    // MARK: - Image
 
     private func updateImage() {
         guard isAuthenticated, let usage = usage else {

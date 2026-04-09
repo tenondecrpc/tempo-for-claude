@@ -28,7 +28,6 @@ private struct ExtraUsageWindow: Identifiable {
 enum DetailTab: String, CaseIterable {
     case overview    = "Overview"
     case activity    = "Activity"
-    case insights    = "Insights"
     case preferences = "Preferences"
 }
 
@@ -134,8 +133,6 @@ struct DetailWindowView: View {
             overviewTab
         case .activity:
             activityTab
-        case .insights:
-            insightsTab
         case .preferences:
             preferencesTab
         }
@@ -208,7 +205,9 @@ struct DetailWindowView: View {
                     .foregroundStyle(TempoTheme.textSecondary)
             }
             .padding(16)
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(TempoTheme.card)
         .clipShape(.rect(cornerRadius: 12))
     }
@@ -242,7 +241,9 @@ struct DetailWindowView: View {
                     .foregroundStyle(TempoTheme.textSecondary)
             }
             .padding(16)
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(TempoTheme.card)
         .clipShape(.rect(cornerRadius: 12))
     }
@@ -271,7 +272,9 @@ struct DetailWindowView: View {
                     .foregroundStyle(TempoTheme.textSecondary)
             }
             .padding(16)
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(TempoTheme.card)
         .clipShape(.rect(cornerRadius: 12))
     }
@@ -303,51 +306,51 @@ struct DetailWindowView: View {
                     .foregroundStyle(TempoTheme.textSecondary)
             }
             .padding(16)
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(TempoTheme.card)
         .clipShape(.rect(cornerRadius: 12))
     }
 
     // MARK: - Activity Tab
 
-    private var activityTab: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            // Heatmap
-            Text("Usage Activity")
-                .font(.headline)
-                .foregroundStyle(TempoTheme.textPrimary)
-
-            if !localDB.isAvailable {
-                unavailableView("Activity data unavailable")
-            } else {
-                ActivityHeatmapView(dailyActivity: localDB.dailyActivity)
-            }
-
-            Divider().overlay(TempoTheme.progressTrack)
-
-            // Claude Code section
-            claudeCodeStatsSection
-        }
-    }
-
-    // MARK: - Insights Tab
-
     @ViewBuilder
-    private var insightsTab: some View {
+    private var activityTab: some View {
         if let usage = coordinator.poller.latestUsage {
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 VStack(alignment: .leading, spacing: 24) {
+                    // Insights summary
                     HStack(spacing: 16) {
                         warningCard(usage: usage, now: context.date)
                         subscriptionCard()
                     }
 
                     HStack(spacing: 16) {
-                        compactStatCard(icon: "info.circle", title: "Avg Session", value: avgSession, subtitle: "average usage", color: TempoTheme.critical)
+                        compactStatCard(icon: "info.circle", title: "Avg Session", value: avgSession, subtitle: "average usage", color: TempoTheme.textPrimary)
                         compactStatCard(icon: "calendar", title: "Avg Weekly", value: avgWeekly, subtitle: "average usage", color: TempoTheme.textPrimary)
-                        compactStatCard(icon: "exclamationmark.triangle", title: "High Usage", value: "\(highUsageDays)", subtitle: "days at 90%+", color: TempoTheme.critical)
-                        compactStatCard(icon: "arrow.up.right", title: "Peak", value: peakSession, subtitle: "highest session", color: TempoTheme.critical)
+                        compactStatCard(icon: "exclamationmark.triangle", title: "High Usage", value: "\(highUsageDays)", subtitle: "days at 90%+", color: highUsageDays > 3 ? TempoTheme.warning : TempoTheme.textPrimary)
+                        compactStatCard(icon: "arrow.up.right", title: "Peak", value: peakSession, subtitle: "highest session", color: TempoTheme.textPrimary)
                     }
+
+                    // Heatmap card
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Usage Activity")
+                            .font(.headline)
+                            .foregroundStyle(TempoTheme.textPrimary)
+                        if !localDB.isAvailable {
+                            unavailableView("Activity data unavailable")
+                        } else {
+                            ActivityHeatmapView(dailyActivity: localDB.dailyActivity)
+                        }
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(TempoTheme.card)
+                    .clipShape(.rect(cornerRadius: 12))
+
+                    // Claude Code section card
+                    claudeCodeStatsSection
                 }
             }
         } else {
@@ -367,12 +370,12 @@ struct DetailWindowView: View {
                 .foregroundStyle(onTrack ? TempoTheme.success : TempoTheme.critical)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(onTrack ? "Session Usage Normal" : "Weekly Limit Warning")
+                Text(onTrack ? "Session Usage Normal" : "Session Limit Warning")
                     .font(.subheadline.bold())
                     .foregroundStyle(TempoTheme.textPrimary)
 
                 if let h = hoursToLimit {
-                    Text("At current rate, you'll hit your weekly limit in less than \(etaString(hours: h))")
+                    Text("At current rate, you'll hit your session limit in less than \(etaString(hours: h))")
                         .font(.caption)
                         .foregroundStyle(TempoTheme.critical)
                 } else if onTrack {
@@ -393,6 +396,8 @@ struct DetailWindowView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(TempoTheme.card)
+        .clipShape(.rect(cornerRadius: 12))
     }
 
     private func subscriptionCard() -> some View {
@@ -428,6 +433,8 @@ struct DetailWindowView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(TempoTheme.card)
+        .clipShape(.rect(cornerRadius: 12))
     }
 
     private func compactStatCard(icon: String, title: String, value: String, subtitle: String, color: Color) -> some View {
@@ -448,174 +455,45 @@ struct DetailWindowView: View {
                 .foregroundStyle(TempoTheme.textSecondary)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(TempoTheme.card)
+        .clipShape(.rect(cornerRadius: 12))
     }
 
     // MARK: - Preferences Tab
 
     private var preferencesTab: some View {
-        HStack {
-            Spacer()
-            preferencesContent
-                .frame(maxWidth: 560)
-            Spacer()
-        }
-    }
-
-    @ViewBuilder
-    private var preferencesContent: some View {
-        @Bindable var settings = coordinator.settings
-
-        VStack(alignment: .leading, spacing: 24) {
-            // General card
-            preferencesCard(title: "General") {
-                settingsRow(
-                    icon: "power",
-                    title: "Launch at Login",
-                    subtitle: coordinator.launchAtLoginManager.helperMessage ?? "Start app when you log in",
-                    toggle: Binding(
-                        get: { coordinator.launchAtLoginManager.isEnabled },
-                        set: { coordinator.setLaunchAtLoginEnabled($0) }
-                    ),
-                    isDisabled: !coordinator.launchAtLoginManager.isSupportedInstallLocation
-                )
-                Divider().overlay(TempoTheme.progressTrack)
-                settingsRow(
-                    icon: "percent",
-                    title: "Show Percentage in Menu Bar",
-                    subtitle: "Display session usage percentage next to the icon",
-                    toggle: $settings.showPercentageInMenuBar
-                )
-                Divider().overlay(TempoTheme.progressTrack)
-                settingsRow(
-                    icon: "clock.arrow.2.circlepath",
-                    title: "24-Hour Time",
-                    subtitle: chartUse24HourTime ? "Times shown as 14:30" : "Times shown as 02:30 PM",
-                    toggle: Binding(
-                        get: { chartUse24HourTime },
-                        set: { newValue in
-                            chartUse24HourTime = newValue
-                            settings.use24HourTime = newValue
-                        }
-                    )
-                )
-            }
-
-            // Data & Sync card
-            preferencesCard(title: "Data & Sync") {
-                settingsRow(
-                    icon: "icloud",
-                    title: "Sync History via iCloud",
-                    subtitle: "Sync usage history across your Macs",
-                    toggle: $settings.syncHistoryViaICloud
-                )
-                Divider().overlay(TempoTheme.progressTrack)
-                settingsRow(
-                    icon: "dot.radiowaves.left.and.right",
-                    title: "Service Status Monitoring",
-                    subtitle: "Show Claude service status in the menu bar",
-                    toggle: $settings.serviceStatusMonitoring
-                )
-            }
-
-            // Account card
-            preferencesCard(title: "Account") {
-                if let email = coordinator.authState.accountEmail {
-                    Text(email)
-                        .font(.callout)
-                        .foregroundStyle(TempoTheme.textSecondary)
-                        .padding(.vertical, 8)
-                }
-                Button("Sign Out") {
-                    coordinator.client.signOut()
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(TempoTheme.critical)
-                .font(.subheadline.weight(.semibold))
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func preferencesCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(TempoTheme.textSecondary)
-                .padding(.bottom, 10)
-
-            VStack(alignment: .leading, spacing: 0) {
-                content()
-            }
-            .padding(24)
-            .background(TempoTheme.card)
-            .clipShape(.rect(cornerRadius: 12))
-        }
-    }
-
-    @ViewBuilder
-    private func settingsRow(
-        icon: String,
-        title: String,
-        subtitle: String,
-        toggle: Binding<Bool>,
-        isDisabled: Bool = false
-    ) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(TempoTheme.accent)
-                .frame(width: 24, height: 24)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(isDisabled ? TempoTheme.textSecondary : TempoTheme.textPrimary)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(.callout)
-                    .foregroundStyle(TempoTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 12)
-
-            Toggle("", isOn: toggle)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .tint(TempoTheme.accent)
-                .disabled(isDisabled)
-        }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 2)
+        PreferencesWindowView(coordinator: coordinator, standalone: false)
     }
 
     // MARK: - Claude Code Stats Section
 
     private var claudeCodeStatsSection: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Image(systemName: "terminal")
                     .foregroundStyle(TempoTheme.textSecondary)
                 Text("Claude Code")
                     .font(.headline)
                     .foregroundStyle(TempoTheme.textPrimary)
-                Text("7 days")
-                    .font(.caption.bold())
+                Spacer()
+                Text("7d")
+                    .font(.caption2.bold())
                     .foregroundStyle(TempoTheme.accent)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(TempoTheme.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
             }
 
             if !localDB.isAvailable {
                 unavailableView("Claude Code history unavailable — local DB not found")
             } else {
                 compactAggregateRow
+                Divider().overlay(TempoTheme.progressTrack)
                 projectTable
             }
         }
+        .padding(16)
+        .background(TempoTheme.card)
+        .clipShape(.rect(cornerRadius: 12))
     }
 
     private var compactAggregateRow: some View {
@@ -630,32 +508,41 @@ struct DetailWindowView: View {
         let sessionCount = localDB.projectStats.reduce(0) { $0 + $1.sessions7d }
         let costEquiv7d = localDB.projectStats.reduce(0.0) { $0 + $1.costEquiv7d }
 
-        return HStack(spacing: 0) {
-            statItem(icon: "bubble.left", label: "Messages", value: msgCount.formatted())
-                .frame(maxWidth: .infinity, alignment: .leading)
-            statItem(icon: "wrench.and.screwdriver", label: "Tool Calls", value: toolCount.formatted())
-                .frame(maxWidth: .infinity, alignment: .leading)
-            statItem(icon: "square.stack.3d.up", label: "Sessions", value: sessionCount.formatted())
-                .frame(maxWidth: .infinity, alignment: .leading)
-            statItem(icon: "dollarsign.circle", label: "API Equiv.", value: costEquiv7d > 0 ? String(format: "$%.0f", costEquiv7d) : "—")
-                .frame(maxWidth: .infinity, alignment: .leading)
-            statItem(icon: "network", label: "Subagents", value: localDB.totalSubagents.formatted())
-                .frame(maxWidth: .infinity, alignment: .leading)
+        return VStack(alignment: .leading, spacing: 12) {
+            // Main stats row
+            HStack(spacing: 0) {
+                statItem(icon: "bubble.left", label: "Messages", value: msgCount.formatted())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                statItem(icon: "wrench.and.screwdriver", label: "Tool Calls", value: toolCount.formatted())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                statItem(icon: "square.stack.3d.up", label: "Sessions", value: sessionCount.formatted())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                statItem(icon: "dollarsign.circle", label: "API Equiv.", value: costEquiv7d > 0 ? String(format: "$%.0f", costEquiv7d) : "—")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                statItem(icon: "network", label: "Subagents", value: localDB.totalSubagents.formatted())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
-            if opus > 0 {
-                modelTokenVStack("Opus", value: formatTokens(opus), color: .purple)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if sonnet > 0 {
-                modelTokenVStack("Sonnet", value: formatTokens(sonnet), color: .orange)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if haiku > 0 {
-                modelTokenVStack("Haiku", value: formatTokens(haiku), color: .green)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // Model token breakdown row
+            if opus > 0 || sonnet > 0 || haiku > 0 {
+                Divider().overlay(TempoTheme.progressTrack)
+                HStack(spacing: 8) {
+                    Text("Tokens")
+                        .font(.caption2)
+                        .foregroundStyle(TempoTheme.textSecondary)
+                    if opus > 0 {
+                        modelTokenPill(label: "Opus", value: formatTokens(opus), color: .purple)
+                    }
+                    if sonnet > 0 {
+                        modelTokenPill(label: "Sonnet", value: formatTokens(sonnet), color: .orange)
+                    }
+                    if haiku > 0 {
+                        modelTokenPill(label: "Haiku", value: formatTokens(haiku), color: .green)
+                    }
+                    Spacer()
+                }
             }
         }
-        .padding(.vertical, 8)
     }
 
     private func statItem(icon: String, label: String, value: String) -> some View {
@@ -674,15 +561,18 @@ struct DetailWindowView: View {
         }
     }
 
-    private func modelTokenVStack(_ label: String, value: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+    private func modelTokenPill(label: String, value: String, color: Color) -> some View {
+        HStack(spacing: 4) {
             Text(label)
-                .font(.caption.bold())
+                .font(.caption2.bold())
                 .foregroundStyle(color)
             Text(value)
-                .font(.subheadline.bold())
+                .font(.caption2.monospacedDigit())
                 .foregroundStyle(TempoTheme.textPrimary)
         }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.1), in: RoundedRectangle(cornerRadius: 5))
     }
 
     private var projectTable: some View {

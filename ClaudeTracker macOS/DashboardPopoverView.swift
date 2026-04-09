@@ -5,6 +5,7 @@ import SwiftUI
 struct DashboardPopoverView: View {
     let coordinator: MacAppCoordinator
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         let use24HourTime = coordinator.settings.use24HourTime
@@ -134,6 +135,29 @@ struct DashboardPopoverView: View {
                 HStack {
                     Image(systemName: "chart.line.uptrend.xyaxis")
                     Text("Usage History")
+                    Spacer()
+                }
+                .foregroundStyle(TempoTheme.textPrimary)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Divider().overlay(TempoTheme.progressTrack)
+
+            // Preferences
+            Button {
+                let menuWindow = NSApp.keyWindow
+                openSettings()
+                NSApp.activate(ignoringOtherApps: true)
+                DispatchQueue.main.async {
+                    menuWindow?.close()
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "gearshape")
+                    Text("Preferences")
                     Spacer()
                 }
                 .foregroundStyle(TempoTheme.textPrimary)

@@ -5,7 +5,11 @@ import Foundation
 final class MacSettingsStore {
     private enum Key {
         static let launchAtLogin = "mac.settings.launchAtLogin"
-        static let showPercentageInMenuBar = "mac.settings.showPercentageInMenuBar"
+        static let show5hPercentage = "mac.settings.show5hPercentage"
+        static let show5hResetTime = "mac.settings.show5hResetTime"
+        static let show7dPercentage = "mac.settings.show7dPercentage"
+        static let show7dResetTime = "mac.settings.show7dResetTime"
+        static let showExtraUsageCredits = "mac.settings.showExtraUsageCredits"
         static let use24HourTime = "mac.settings.use24HourTime"
         static let serviceStatusMonitoring = "mac.settings.serviceStatusMonitoring"
         static let syncHistoryViaICloud = "mac.settings.syncHistoryViaICloud"
@@ -20,9 +24,33 @@ final class MacSettingsStore {
         }
     }
 
-    var showPercentageInMenuBar: Bool {
+    var show5hPercentage: Bool {
         didSet {
-            persist(showPercentageInMenuBar, forKey: Key.showPercentageInMenuBar)
+            persist(show5hPercentage, forKey: Key.show5hPercentage)
+        }
+    }
+
+    var show5hResetTime: Bool {
+        didSet {
+            persist(show5hResetTime, forKey: Key.show5hResetTime)
+        }
+    }
+
+    var show7dPercentage: Bool {
+        didSet {
+            persist(show7dPercentage, forKey: Key.show7dPercentage)
+        }
+    }
+
+    var show7dResetTime: Bool {
+        didSet {
+            persist(show7dResetTime, forKey: Key.show7dResetTime)
+        }
+    }
+
+    var showExtraUsageCredits: Bool {
+        didSet {
+            persist(showExtraUsageCredits, forKey: Key.showExtraUsageCredits)
         }
     }
 
@@ -57,35 +85,41 @@ final class MacSettingsStore {
         self.defaults = defaults
         isHydrating = true
 
-        if defaults.object(forKey: Key.launchAtLogin) == nil {
-            launchAtLogin = false
-        } else {
-            launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
-        }
+        launchAtLogin = defaults.object(forKey: Key.launchAtLogin) != nil
+            ? defaults.bool(forKey: Key.launchAtLogin)
+            : false
 
-        if defaults.object(forKey: Key.showPercentageInMenuBar) == nil {
-            showPercentageInMenuBar = true
-        } else {
-            showPercentageInMenuBar = defaults.bool(forKey: Key.showPercentageInMenuBar)
-        }
+        show5hPercentage = defaults.object(forKey: Key.show5hPercentage) != nil
+            ? defaults.bool(forKey: Key.show5hPercentage)
+            : false
 
-        if defaults.object(forKey: Key.use24HourTime) == nil {
-            use24HourTime = true
-        } else {
-            use24HourTime = defaults.bool(forKey: Key.use24HourTime)
-        }
+        show5hResetTime = defaults.object(forKey: Key.show5hResetTime) != nil
+            ? defaults.bool(forKey: Key.show5hResetTime)
+            : false
 
-        if defaults.object(forKey: Key.serviceStatusMonitoring) == nil {
-            serviceStatusMonitoring = true
-        } else {
-            serviceStatusMonitoring = defaults.bool(forKey: Key.serviceStatusMonitoring)
-        }
+        show7dPercentage = defaults.object(forKey: Key.show7dPercentage) != nil
+            ? defaults.bool(forKey: Key.show7dPercentage)
+            : false
 
-        if defaults.object(forKey: Key.syncHistoryViaICloud) == nil {
-            syncHistoryViaICloud = true
-        } else {
-            syncHistoryViaICloud = defaults.bool(forKey: Key.syncHistoryViaICloud)
-        }
+        show7dResetTime = defaults.object(forKey: Key.show7dResetTime) != nil
+            ? defaults.bool(forKey: Key.show7dResetTime)
+            : false
+
+        showExtraUsageCredits = defaults.object(forKey: Key.showExtraUsageCredits) != nil
+            ? defaults.bool(forKey: Key.showExtraUsageCredits)
+            : false
+
+        use24HourTime = defaults.object(forKey: Key.use24HourTime) != nil
+            ? defaults.bool(forKey: Key.use24HourTime)
+            : true
+
+        serviceStatusMonitoring = defaults.object(forKey: Key.serviceStatusMonitoring) != nil
+            ? defaults.bool(forKey: Key.serviceStatusMonitoring)
+            : true
+
+        syncHistoryViaICloud = defaults.object(forKey: Key.syncHistoryViaICloud) != nil
+            ? defaults.bool(forKey: Key.syncHistoryViaICloud)
+            : true
 
         isHydrating = false
     }

@@ -25,6 +25,31 @@ enum TimeFormatPolicy {
         return "Resets in \(duration) (\(clockString(from: date, use24HourTime: use24HourTime)))"
     }
 
+    /// Short lowercase day name for menu bar labels: "sat", "sun", etc.
+    static func menuBarDayString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE"
+        return formatter.string(from: date).lowercased()
+    }
+
+    /// Compact clock string for menu bar labels: "8:15p" (12h) or "20:15" (24h).
+    static func menuBarClockString(from date: Date, use24HourTime: Bool) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = fixedTimeLocale(use24HourTime: use24HourTime)
+        if use24HourTime {
+            formatter.dateFormat = "HH:mm"
+            return formatter.string(from: date)
+        } else {
+            formatter.dateFormat = "h:mm a"
+            let raw = formatter.string(from: date) // e.g. "8:15 AM"
+            let parts = raw.components(separatedBy: " ")
+            guard parts.count == 2 else { return raw }
+            let suffix = parts[1].prefix(1).lowercased() // "a" or "p"
+            return parts[0] + suffix // "8:15p"
+        }
+    }
+
     static func weeklyResetString(resetAt date: Date, use24HourTime: Bool) -> String {
         let formatter = DateFormatter()
         formatter.locale = fixedTimeLocale(use24HourTime: use24HourTime)
