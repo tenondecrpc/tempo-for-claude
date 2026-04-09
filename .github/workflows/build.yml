@@ -1,4 +1,4 @@
-name: Build
+name: CI - Build macOS
 
 on:
   pull_request:
