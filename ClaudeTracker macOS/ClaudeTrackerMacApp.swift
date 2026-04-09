@@ -14,7 +14,12 @@ final class MacAppCoordinator {
     let history: UsageHistory
     let localDB: ClaudeLocalDBReader
     let appUpdater: AppUpdater
+    let distribution: AppDistribution
     private var hasLaunched = false
+
+    var supportsInAppUpdates: Bool {
+        distribution.supportsInAppUpdates
+    }
 
     init() {
         let authState = MacAuthState()
@@ -25,7 +30,11 @@ final class MacAppCoordinator {
         let serviceStatusMonitor = ServiceStatusMonitor()
         let history = UsageHistory(syncHistoryViaICloud: settings.syncHistoryViaICloud)
         let localDB = ClaudeLocalDBReader()
-        let appUpdater = AppUpdater(autoCheckEnabled: { settings.autoCheckForUpdates })
+        let distribution = AppDistribution.current
+        let appUpdater = AppUpdater(
+            updatesEnabled: distribution.supportsInAppUpdates,
+            autoCheckEnabled: { settings.autoCheckForUpdates && distribution.supportsInAppUpdates }
+        )
 
         self.authState = authState
         self.client = client
@@ -36,6 +45,7 @@ final class MacAppCoordinator {
         self.history = history
         self.localDB = localDB
         self.appUpdater = appUpdater
+        self.distribution = distribution
 
         client.onSignOut = { [weak self] in
             self?.poller.stop()
@@ -104,6 +114,7 @@ struct ClaudeTrackerMacApp: App {
         MenuBarExtra {
             MacMenuView(coordinator: coordinator)
                 .frame(width: 320)
+                .preferredColorScheme(coordinator.settings.preferredColorScheme)
                 .task {
                     await coordinator.onLaunch()
                 }
@@ -124,16 +135,19 @@ struct ClaudeTrackerMacApp: App {
         Window("Welcome", id: "welcome") {
             WelcomeWindowView(coordinator: coordinator)
                 .frame(minWidth: 580, minHeight: 480)
+                .preferredColorScheme(coordinator.settings.preferredColorScheme)
         }
         .windowResizability(.contentSize)
 
         Window("Tempo for Claude", id: "stats-detail") {
             DetailWindowView(coordinator: coordinator, history: coordinator.history, localDB: coordinator.localDB)
+                .preferredColorScheme(coordinator.settings.preferredColorScheme)
         }
         .windowResizability(.contentSize)
 
         Settings {
             PreferencesWindowView(coordinator: coordinator)
+                .preferredColorScheme(coordinator.settings.preferredColorScheme)
         }
         .windowResizability(.contentSize)
     }

@@ -29,7 +29,7 @@ struct DashboardPopoverView: View {
                             now: context.date,
                             use24HourTime: use24HourTime
                         )
-                        Divider().overlay(TempoTheme.progressTrack)
+                        Divider().overlay(ClaudeCodeTheme.progressTrack)
                         actionItems
                     }
                 }
@@ -39,8 +39,7 @@ struct DashboardPopoverView: View {
                 pollingView
             }
         }
-        .background(TempoTheme.background)
-        .preferredColorScheme(.dark)
+        .background(ClaudeCodeTheme.background)
         .onAppear {
             updateVersion = coordinator.appUpdater.availableVersion
             updateStatusMessage = coordinator.appUpdater.statusMessage
@@ -62,10 +61,10 @@ struct DashboardPopoverView: View {
                     Spacer()
                     Image(systemName: "sparkles")
                         .font(.caption)
-                        .foregroundStyle(TempoTheme.warning)
+                        .foregroundStyle(ClaudeCodeTheme.warning)
                     Text("2x promo active")
                         .font(.caption)
-                        .foregroundStyle(TempoTheme.warning)
+                        .foregroundStyle(ClaudeCodeTheme.warning)
                 }
             }
 
@@ -87,7 +86,7 @@ struct DashboardPopoverView: View {
                         now: now,
                         use24HourTime: use24HourTime
                     ),
-                    accentColor: TempoTheme.accent
+                    accentColor: ClaudeCodeTheme.accent
                 )
                 SessionPillChip(
                     value: "\(Int(usage.utilization7d * 100))%",
@@ -95,7 +94,7 @@ struct DashboardPopoverView: View {
                         resetAt: usage.resetAt7d,
                         use24HourTime: use24HourTime
                     ),
-                    accentColor: TempoTheme.info
+                    accentColor: ClaudeCodeTheme.info
                 )
             }
 
@@ -115,10 +114,10 @@ struct DashboardPopoverView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "clock")
                         .font(.caption2)
-                        .foregroundStyle(TempoTheme.textTertiary)
+                        .foregroundStyle(ClaudeCodeTheme.textTertiary)
                     Text(lastPollAt, style: .relative)
                         .font(.caption2)
-                        .foregroundStyle(TempoTheme.textTertiary)
+                        .foregroundStyle(ClaudeCodeTheme.textTertiary)
                 }
             }
         }
@@ -144,58 +143,46 @@ struct DashboardPopoverView: View {
                     Text("Usage History")
                     Spacer()
                 }
-                .foregroundStyle(TempoTheme.textPrimary)
+                .foregroundStyle(ClaudeCodeTheme.textPrimary)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            Divider().overlay(TempoTheme.progressTrack)
+            Divider().overlay(ClaudeCodeTheme.progressTrack)
 
-            // Updates
-            Button {
-                if displayedUpdateVersion != nil {
-                    coordinator.appUpdater.openLatestRelease()
-                } else {
-                    Task {
-                        await runManualUpdateCheck()
-                    }
-                }
-            } label: {
-                HStack {
-                    Image(systemName: updateLeadingIconName)
-                        .foregroundStyle(updateLeadingIconColor)
-                    if let version = displayedUpdateVersion {
-                        Text("Download Update \(version)")
+            if coordinator.supportsInAppUpdates {
+                // Updates
+                Button {
+                    if displayedUpdateVersion != nil {
+                        coordinator.appUpdater.openLatestRelease()
                     } else {
-                        Text("Check for Updates")
+                        Task {
+                            await runManualUpdateCheck()
+                        }
                     }
-                    Spacer()
-                    if isCheckingUpdates {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(TempoTheme.textSecondary)
-                    } else if displayedUpdateVersion != nil {
-                        Image(systemName: "sparkles")
-                            .foregroundStyle(.green)
-                    } else if updateStatusMessage?.localizedCaseInsensitiveContains("failed") == true {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(TempoTheme.warning)
-                    } else if updateStatusMessage != nil {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                } label: {
+                    HStack {
+                        Image(systemName: updateLeadingIconName)
+                            .foregroundStyle(updateLeadingIconColor)
+                        if let version = displayedUpdateVersion {
+                            Text("Download Update \(version)")
+                        } else {
+                            Text("Check for Updates")
+                        }
+                        Spacer()
                     }
+                    .foregroundStyle(displayedUpdateVersion != nil ? Color.green : ClaudeCodeTheme.textPrimary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
                 }
-                .foregroundStyle(displayedUpdateVersion != nil ? Color.green : TempoTheme.textPrimary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isCheckingUpdates)
+                .buttonStyle(.plain)
+                .disabled(isCheckingUpdates)
 
-            Divider().overlay(TempoTheme.progressTrack)
+                Divider().overlay(ClaudeCodeTheme.progressTrack)
+            }
 
             // Preferences
             Button {
@@ -211,7 +198,7 @@ struct DashboardPopoverView: View {
                     Text("Preferences")
                     Spacer()
                 }
-                .foregroundStyle(TempoTheme.textPrimary)
+                .foregroundStyle(ClaudeCodeTheme.textPrimary)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
@@ -228,18 +215,18 @@ struct DashboardPopoverView: View {
                     if let email = coordinator.authState.accountEmail {
                         Text("(\(email))")
                             .font(.caption)
-                            .foregroundStyle(TempoTheme.textSecondary)
+                            .foregroundStyle(ClaudeCodeTheme.textSecondary)
                     }
                     Spacer()
                 }
-                .foregroundStyle(TempoTheme.textPrimary)
+                .foregroundStyle(ClaudeCodeTheme.textPrimary)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            Divider().overlay(TempoTheme.progressTrack)
+            Divider().overlay(ClaudeCodeTheme.progressTrack)
 
             // Quit
             HStack {
@@ -247,7 +234,7 @@ struct DashboardPopoverView: View {
                     NSApplication.shared.terminate(nil)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(TempoTheme.critical)
+                .foregroundStyle(ClaudeCodeTheme.error)
                 .font(.caption)
                 Spacer()
             }
@@ -262,10 +249,10 @@ struct DashboardPopoverView: View {
         VStack(spacing: 10) {
             ProgressView()
                 .controlSize(.small)
-                .tint(TempoTheme.textSecondary)
+                .tint(ClaudeCodeTheme.textSecondary)
             Text("Fetching usage…")
                 .font(.caption)
-                .foregroundStyle(TempoTheme.textSecondary)
+                .foregroundStyle(ClaudeCodeTheme.textSecondary)
         }
         .frame(maxWidth: .infinity)
         .padding(32)
@@ -277,17 +264,17 @@ struct DashboardPopoverView: View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 28))
-                .foregroundStyle(TempoTheme.warning)
+                .foregroundStyle(ClaudeCodeTheme.warning)
             Text(message)
                 .font(.caption)
-                .foregroundStyle(TempoTheme.textSecondary)
+                .foregroundStyle(ClaudeCodeTheme.textSecondary)
                 .multilineTextAlignment(.center)
             Button("Retry") {
                 coordinator.poller.pollNow()
             }
             .buttonStyle(.plain)
             .font(.caption.bold())
-            .foregroundStyle(TempoTheme.accent)
+            .foregroundStyle(ClaudeCodeTheme.accent)
         }
         .frame(maxWidth: .infinity)
         .padding(32)
@@ -320,9 +307,9 @@ struct DashboardPopoverView: View {
             return .green
         }
         if updateStatusMessage?.localizedCaseInsensitiveContains("failed") == true {
-            return TempoTheme.warning
+            return ClaudeCodeTheme.warning
         }
-        return TempoTheme.textPrimary
+        return ClaudeCodeTheme.textPrimary
     }
 
     private func runManualUpdateCheck() async {
