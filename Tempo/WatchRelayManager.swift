@@ -4,6 +4,11 @@ import WatchConnectivity
 // MARK: - WatchRelayManager (Tasks 5.1–5.4)
 
 final class WatchRelayManager: NSObject {
+    private struct PendingSessionTransfer {
+        let sessionInfo: SessionInfo
+        let alertPreferences: SessionAlertPreferences
+    }
+
     private enum DefaultsKey {
         static let lastRelayedSessionID = "watchrelay.lastRelayedSessionID"
     }
@@ -13,7 +18,8 @@ final class WatchRelayManager: NSObject {
     private var didAssignDelegate = false
     private var pendingState: UsageState?
     private var pendingHistory: [UsageHistorySnapshot] = []
-    private var pendingSessions: [SessionInfo] = []
+    private var pendingAlertPreferences: SessionAlertPreferences = .default
+    private var pendingSessions: [PendingSessionTransfer] = []
     private var hasRequestedActivation = false
     private var hasLoggedMissingWatchApp = false
 
@@ -40,11 +46,16 @@ final class WatchRelayManager: NSObject {
 
     // MARK: - Send UsageState (Task 5.4)
 
-    func send(_ state: UsageState, history: [UsageHistorySnapshot] = []) {
+    func send(
+        _ state: UsageState,
+        history: [UsageHistorySnapshot] = [],
+        alertPreferences: SessionAlertPreferences = .default
+    ) {
         ensureDelegate()
         guard session.activationState == .activated else {
             pendingState = state
             pendingHistory = history
+            pendingAlertPreferences = alertPreferences
             activate()
             return
         }
@@ -57,15 +68,17 @@ final class WatchRelayManager: NSObject {
         guard isPaired else {
             pendingState = state
             pendingHistory = history
+            pendingAlertPreferences = alertPreferences
             return
         }
 
         guard isWatchAppInstalled else {
             pendingState = state
             pendingHistory = history
+            pendingAlertPreferences = alertPreferences
             // Fallback path: some setups report watchInstalled=false while the watch app is running.
             // Queue a background transfer so the watch can still receive the latest state.
-            enqueueLatestUsagePayload(state.toUserInfo(history: history))
+            enqueueLatestUsagePayload(state.toUserInfo(history: history, alertPreferences: alertPreferences))
             if !hasLoggedMissingWatchApp {
                 hasLoggedMissingWatchApp = true
                 print("[WatchRelay] watch counterpart app not installed on paired Apple Watch. Install the watch app, then the latest state will be sent automatically.")
@@ -75,7 +88,7 @@ final class WatchRelayManager: NSObject {
 
         hasLoggedMissingWatchApp = false
 
-        let payload = state.toUserInfo(history: history)
+        let payload = state.toUserInfo(history: history, alertPreferences: alertPreferences)
         do {
             try session.updateApplicationContext(payload)
         } catch {
@@ -97,28 +110,32 @@ final class WatchRelayManager: NSObject {
         pendingState = nil
         let history = pendingHistory
         pendingHistory = []
-        send(state, history: history)
+        let alertPreferences = pendingAlertPreferences
+        send(state, history: history, alertPreferences: alertPreferences)
     }
 
     // MARK: - Send SessionInfo
 
-    func sendSession(_ sessionInfo: SessionInfo) {
+    func sendSession(
+        _ sessionInfo: SessionInfo,
+        alertPreferences: SessionAlertPreferences = .default
+    ) {
         if lastRelayedSessionID == sessionInfo.sessionId {
             return
         }
         ensureDelegate()
         guard session.activationState == .activated else {
-            enqueuePendingSessionIfNeeded(sessionInfo)
+            enqueuePendingSessionIfNeeded(sessionInfo, alertPreferences: alertPreferences)
             activate()
             return
         }
 
         guard session.isPaired, session.isWatchAppInstalled else {
-            enqueuePendingSessionIfNeeded(sessionInfo)
+            enqueuePendingSessionIfNeeded(sessionInfo, alertPreferences: alertPreferences)
             return
         }
 
-        session.transferUserInfo(sessionInfo.toUserInfo())
+        session.transferUserInfo(sessionInfo.toUserInfo(alertPreferences: alertPreferences))
         lastRelayedSessionID = sessionInfo.sessionId
         print("[WatchRelay] queued transferUserInfo for SessionInfo id=\(sessionInfo.sessionId)")
     }
@@ -131,15 +148,20 @@ final class WatchRelayManager: NSObject {
         let queued = pendingSessions
         pendingSessions.removeAll(keepingCapacity: true)
         queued.forEach {
-            session.transferUserInfo($0.toUserInfo())
-            lastRelayedSessionID = $0.sessionId
+            session.transferUserInfo($0.sessionInfo.toUserInfo(alertPreferences: $0.alertPreferences))
+            lastRelayedSessionID = $0.sessionInfo.sessionId
         }
         print("[WatchRelay] flushed \(queued.count) queued SessionInfo payload(s)")
     }
 
-    private func enqueuePendingSessionIfNeeded(_ sessionInfo: SessionInfo) {
-        guard pendingSessions.contains(where: { $0.sessionId == sessionInfo.sessionId }) == false else { return }
-        pendingSessions.append(sessionInfo)
+    private func enqueuePendingSessionIfNeeded(
+        _ sessionInfo: SessionInfo,
+        alertPreferences: SessionAlertPreferences
+    ) {
+        guard pendingSessions.contains(where: { $0.sessionInfo.sessionId == sessionInfo.sessionId }) == false else { return }
+        pendingSessions.append(
+            PendingSessionTransfer(sessionInfo: sessionInfo, alertPreferences: alertPreferences)
+        )
     }
 
     private var lastRelayedSessionID: String? {
@@ -190,7 +212,10 @@ extension WatchRelayManager: WCSessionDelegate {
 // MARK: - UsageState WatchConnectivity Encoding (Task 5.5)
 
 extension UsageState {
-    func toUserInfo(history: [UsageHistorySnapshot] = []) -> [String: Any] {
+    func toUserInfo(
+        history: [UsageHistorySnapshot] = [],
+        alertPreferences: SessionAlertPreferences = .default
+    ) -> [String: Any] {
         var info: [String: Any] = [
             "type": "UsageState",
             "utilization5h": utilization5h,
@@ -198,6 +223,7 @@ extension UsageState {
             "resetAt5h": resetAt5h.timeIntervalSince1970,
             "resetAt7d": resetAt7d.timeIntervalSince1970,
             "isMocked": isMocked,
+            "watchAlertsEnabled": alertPreferences.watchAlertsEnabled,
         ]
         // Include last 7 days of history snapshots for the watch trend view
         let recent = history.filter { $0.date >= Date().addingTimeInterval(-7 * 24 * 3600) }
@@ -209,7 +235,7 @@ extension UsageState {
 }
 
 extension SessionInfo {
-    func toUserInfo() -> [String: Any] {
+    func toUserInfo(alertPreferences: SessionAlertPreferences = .default) -> [String: Any] {
         [
             "type": "SessionInfo",
             "sessionId": sessionId,
@@ -218,6 +244,7 @@ extension SessionInfo {
             "costUSD": costUSD,
             "durationSeconds": durationSeconds,
             "timestamp": timestamp.timeIntervalSince1970,
+            "watchAlertsEnabled": alertPreferences.watchAlertsEnabled,
         ]
     }
 }

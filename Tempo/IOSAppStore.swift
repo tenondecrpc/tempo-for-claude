@@ -17,6 +17,18 @@ final class IOSAppStore {
     var use24HourTime: Bool {
         didSet { defaults.set(use24HourTime, forKey: Keys.use24HourTime) }
     }
+    var iPhoneAlertsEnabled: Bool {
+        didSet {
+            defaults.set(iPhoneAlertsEnabled, forKey: Keys.iPhoneAlertsEnabled)
+            onSessionAlertPreferencesChange?(sessionAlertPreferences)
+        }
+    }
+    var watchAlertsEnabled: Bool {
+        didSet {
+            defaults.set(watchAlertsEnabled, forKey: Keys.watchAlertsEnabled)
+            onSessionAlertPreferencesChange?(sessionAlertPreferences)
+        }
+    }
 
     var usage: UsageState? { iCloudReader.latestUsage }
     var historySnapshots: [UsageHistorySnapshot] { iCloudReader.historySnapshots }
@@ -52,6 +64,7 @@ final class IOSAppStore {
 
     private(set) var isWatchPaired = false
     private(set) var isWatchAppInstalled = false
+    var onSessionAlertPreferencesChange: ((SessionAlertPreferences) -> Void)?
 
     func updateWatchState(isPaired: Bool, isInstalled: Bool) {
         isWatchPaired = isPaired
@@ -72,6 +85,15 @@ final class IOSAppStore {
         static let showSessionSeries = "ios.showSessionSeries"
         static let showWeeklySeries = "ios.showWeeklySeries"
         static let use24HourTime = "ios.use24HourTime"
+        static let iPhoneAlertsEnabled = "ios.iPhoneAlertsEnabled"
+        static let watchAlertsEnabled = "ios.watchAlertsEnabled"
+    }
+
+    var sessionAlertPreferences: SessionAlertPreferences {
+        SessionAlertPreferences(
+            iPhoneAlertsEnabled: iPhoneAlertsEnabled,
+            watchAlertsEnabled: watchAlertsEnabled
+        )
     }
 
     init(iCloudReader: iCloudUsageReader, defaults: UserDefaults = .standard) {
@@ -101,6 +123,18 @@ final class IOSAppStore {
             use24HourTime = false
         } else {
             use24HourTime = defaults.bool(forKey: Keys.use24HourTime)
+        }
+
+        if defaults.object(forKey: Keys.iPhoneAlertsEnabled) == nil {
+            iPhoneAlertsEnabled = SessionAlertPreferences.default.iPhoneAlertsEnabled
+        } else {
+            iPhoneAlertsEnabled = defaults.bool(forKey: Keys.iPhoneAlertsEnabled)
+        }
+
+        if defaults.object(forKey: Keys.watchAlertsEnabled) == nil {
+            watchAlertsEnabled = SessionAlertPreferences.default.watchAlertsEnabled
+        } else {
+            watchAlertsEnabled = defaults.bool(forKey: Keys.watchAlertsEnabled)
         }
     }
 

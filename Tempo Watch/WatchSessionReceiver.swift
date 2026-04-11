@@ -1,14 +1,15 @@
 import Foundation
 import WatchConnectivity
 import WidgetKit
-import WatchKit
 
 final class WatchSessionReceiver: NSObject, WCSessionDelegate {
 
     private let store: TokenStore
+    private let alertManager: WatchAlertManager
 
-    init(store: TokenStore) {
+    init(store: TokenStore, alertManager: WatchAlertManager) {
         self.store = store
+        self.alertManager = alertManager
         super.init()
         let bundleID = Bundle.main.bundleIdentifier ?? "nil"
         let companionID = Bundle.main.object(forInfoDictionaryKey: "WKCompanionAppBundleIdentifier") as? String ?? "nil"
@@ -80,6 +81,8 @@ final class WatchSessionReceiver: NSObject, WCSessionDelegate {
             isDoubleLimitPromoActive: nil
         )
 
+        let watchAlertsEnabled = userInfo["watchAlertsEnabled"] as? Bool ?? SessionAlertPreferences.default.watchAlertsEnabled
+
         var snapshots: [UsageHistorySnapshot]? = nil
         if let historyData = userInfo["usageHistory"] as? Data {
             snapshots = try? JSONDecoder().decode([UsageHistorySnapshot].self, from: historyData)
@@ -91,10 +94,12 @@ final class WatchSessionReceiver: NSObject, WCSessionDelegate {
 
         Task { @MainActor in
             self.store.apply(state)
+            self.store.setWatchAlertsEnabledInPreferences(watchAlertsEnabled)
             if let snapshots {
                 self.store.applyHistory(snapshots)
             }
         }
+        alertManager.refreshAlertState(enabledInPreferences: watchAlertsEnabled)
     }
 
     private func applySessionInfo(_ userInfo: [String: Any]) {
@@ -107,6 +112,8 @@ final class WatchSessionReceiver: NSObject, WCSessionDelegate {
             let timestampInterval = userInfo["timestamp"] as? TimeInterval
         else { return }
 
+        let watchAlertsEnabled = userInfo["watchAlertsEnabled"] as? Bool ?? SessionAlertPreferences.default.watchAlertsEnabled
+
         let sessionInfo = SessionInfo(
             sessionId: sessionId,
             inputTokens: inputTokens,
@@ -118,7 +125,11 @@ final class WatchSessionReceiver: NSObject, WCSessionDelegate {
 
         Task { @MainActor in
             self.store.applySession(sessionInfo)
-            WKInterfaceDevice.current().play(.notification)
+            self.store.setWatchAlertsEnabledInPreferences(watchAlertsEnabled)
         }
+        alertManager.notifySessionCompletion(
+            for: sessionInfo,
+            enabledInPreferences: watchAlertsEnabled
+        )
     }
 }
