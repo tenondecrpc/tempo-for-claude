@@ -339,7 +339,11 @@ struct DetailWindowView: View {
                             .font(.headline)
                             .foregroundStyle(ClaudeCodeTheme.textPrimary)
                         if !localDB.isAvailable {
-                            unavailableView("Activity data unavailable")
+                            if localDB.needsAccessGrant {
+                                grantAccessView
+                            } else {
+                                unavailableView("Activity data unavailable")
+                            }
                         } else {
                             ActivityHeatmapView(dailyActivity: localDB.dailyActivity)
                         }
@@ -484,7 +488,11 @@ struct DetailWindowView: View {
             }
 
             if !localDB.isAvailable {
-                unavailableView("Claude Code history unavailable — local DB not found")
+                if localDB.needsAccessGrant {
+                    grantAccessView
+                } else {
+                    unavailableView("Claude Code history unavailable — local DB not found")
+                }
             } else {
                 compactAggregateRow
                 Divider().overlay(ClaudeCodeTheme.progressTrack)
@@ -1253,6 +1261,29 @@ struct DetailWindowView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(40)
+    }
+
+    @ViewBuilder
+    private var grantAccessView: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "folder.badge.questionmark")
+                .foregroundStyle(ClaudeCodeTheme.textSecondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Folder access required")
+                    .font(.caption.bold())
+                    .foregroundStyle(ClaudeCodeTheme.textPrimary)
+                Text("Grant read access to your ~/.claude folder to enable local statistics.")
+                    .font(.caption2)
+                    .foregroundStyle(ClaudeCodeTheme.textSecondary)
+            }
+            Spacer()
+            Button("Grant Access") {
+                localDB.requestFolderAccess()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(.vertical, 8)
     }
 
     @ViewBuilder

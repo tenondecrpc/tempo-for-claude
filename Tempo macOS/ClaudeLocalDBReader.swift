@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 // MARK: - Models
 
@@ -70,6 +71,7 @@ nonisolated private struct JNLContentBlock: Decodable {
 final class ClaudeLocalDBReader {
 
     private(set) var isAvailable = false
+    private(set) var needsAccessGrant = false
     private(set) var dailyActivity: [LocalDailyActivity] = []
     private(set) var dailyModelTokens: [LocalDailyModelTokens] = []
     private(set) var modelUsage: [String: LocalModelUsageItem] = [:]
@@ -78,13 +80,7 @@ final class ClaudeLocalDBReader {
     private(set) var totalMessages: Int = 0
     private(set) var totalSubagents: Int = 0
 
-    private static let statsCacheURL: URL = FileManager.default
-        .homeDirectoryForCurrentUser
-        .appendingPathComponent(".claude/stats-cache.json")
-
-    private static let projectsURL: URL = FileManager.default
-        .homeDirectoryForCurrentUser
-        .appendingPathComponent(".claude/projects")
+    private static let bookmarkKey = "claudeFolderBookmark"
 
     init() {
         Task { await load() }
@@ -92,6 +88,55 @@ final class ClaudeLocalDBReader {
 
     func reload() {
         Task { await load() }
+    }
+
+    // MARK: - Folder Access
+
+    func requestFolderAccess() {
+        let panel = NSOpenPanel()
+        panel.message = "Click \"Grant Access\" to enable Claude Code statistics"
+        panel.prompt = "Grant Access"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude")
+
+        panel.begin { [weak self] response in
+            guard let self, response == .OK, let url = panel.url else { return }
+            if let data = try? url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            ) {
+                UserDefaults.standard.set(data, forKey: Self.bookmarkKey)
+            }
+            needsAccessGrant = false
+            Task { await self.load() }
+        }
+    }
+
+    // MARK: - Bookmark Resolution
+
+    private static func resolveBookmarkedClaudeURL() -> URL? {
+        guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return nil }
+        var isStale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: data,
+            options: .withSecurityScope,
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) else { return nil }
+        if isStale, let fresh = try? url.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) {
+            UserDefaults.standard.set(fresh, forKey: bookmarkKey)
+        }
+        return url
     }
 
     // MARK: - Computed: 7-day window
@@ -119,8 +164,13 @@ final class ClaudeLocalDBReader {
     // MARK: - Private
 
     private func load() async {
-        let url = Self.statsCacheURL
-        let projectsURL = Self.projectsURL
+        let scopedURL = Self.resolveBookmarkedClaudeURL()
+        let accessing = scopedURL?.startAccessingSecurityScopedResource() ?? false
+
+        let claudeURL = scopedURL ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude")
+        let statsCacheURL = claudeURL.appendingPathComponent("stats-cache.json")
+        let projectsURL = claudeURL.appendingPathComponent("projects")
 
         struct Loaded {
             let activity: [LocalDailyActivity]
@@ -134,7 +184,7 @@ final class ClaudeLocalDBReader {
 
         do {
             let loaded: Loaded = try await Task.detached(priority: .userInitiated) {
-                let data = try Data(contentsOf: url)
+                let data = try Data(contentsOf: statsCacheURL)
                 let cache = try JSONDecoder().decode(StatsCache.self, from: data)
                 let projects = Self.readProjectStats(from: projectsURL)
                 let subagents = Self.countSubagents(at: projectsURL)
@@ -149,6 +199,8 @@ final class ClaudeLocalDBReader {
                 )
             }.value
 
+            if accessing { scopedURL?.stopAccessingSecurityScopedResource() }
+
             dailyActivity = loaded.activity
             dailyModelTokens = loaded.modelTokens
             modelUsage = loaded.modelUsage
@@ -157,8 +209,14 @@ final class ClaudeLocalDBReader {
             totalSubagents = loaded.totalSubagents
             projectStats = loaded.projects
             isAvailable = true
+            needsAccessGrant = false
         } catch {
+            if accessing { scopedURL?.stopAccessingSecurityScopedResource() }
             isAvailable = false
+            let nsError = error as NSError
+            if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileReadNoPermissionError {
+                needsAccessGrant = true
+            }
         }
     }
 
