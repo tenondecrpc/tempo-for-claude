@@ -95,47 +95,11 @@ private struct TempoMacRingWidgetView: View {
 
     var body: some View {
         TempoMacWidgetChrome(snapshot: entry.snapshot, route: .stats, emptySubtitle: "Open Tempo on this Mac", isPreview: entry.isPreview) { snapshot in
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("On This Mac")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(ClaudeCodeTheme.textSecondary)
-                        Text("Current Session")
-                            .font(.caption2)
-                            .foregroundStyle(ClaudeCodeTheme.textSecondary)
-                    }
-                    Spacer()
-                    if let badge = TempoWidgetFormatting.statusBadge(snapshot) {
-                        TempoMacStatusBadge(text: badge)
-                    }
-                }
-
-                Spacer(minLength: 0)
-
-                TempoMacDualRing(
-                    sessionProgress: snapshot.utilization5h,
-                    weeklyProgress: snapshot.utilization7d
-                )
-                .frame(maxWidth: .infinity, maxHeight: 92)
-
-                Spacer(minLength: 0)
-
-                HStack(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Weekly")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(ClaudeCodeTheme.textSecondary)
-                        Text(TempoWidgetFormatting.percentString(snapshot.utilization7d))
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .foregroundStyle(ClaudeCodeTheme.info)
-                    }
-                    Spacer()
-                    Text(TempoWidgetFormatting.freshnessLabel(snapshot))
-                        .font(.caption2)
-                        .foregroundStyle(ClaudeCodeTheme.textSecondary)
-                }
-            }
+            TempoMacDualRing(
+                sessionProgress: snapshot.utilization5h,
+                weeklyProgress: snapshot.utilization7d
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
@@ -145,59 +109,43 @@ private struct TempoMacSummaryWidgetView: View {
 
     var body: some View {
         TempoMacWidgetChrome(snapshot: entry.snapshot, route: .stats, emptySubtitle: "Launch Tempo to start desktop widgets", isPreview: entry.isPreview) { snapshot in
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Usage for Claude")
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(ClaudeCodeTheme.textPrimary)
-                        Text("On This Mac")
-                            .font(.caption)
-                            .foregroundStyle(ClaudeCodeTheme.textSecondary)
-                    }
-                    Spacer()
-                    if let badge = TempoWidgetFormatting.statusBadge(snapshot) {
-                        TempoMacStatusBadge(text: badge)
-                    }
-                }
-
-                TempoMacMetricRow(
-                    title: "Current Session",
-                    value: TempoWidgetFormatting.percentString(snapshot.utilization5h),
-                    subtitle: TempoWidgetFormatting.sessionResetString(snapshot),
-                    progress: snapshot.utilization5h,
-                    color: ClaudeCodeTheme.accent
-                )
-
-                TempoMacMetricRow(
-                    title: "Weekly Limit",
-                    value: TempoWidgetFormatting.percentString(snapshot.utilization7d),
-                    subtitle: TempoWidgetFormatting.weeklyResetString(snapshot),
-                    progress: snapshot.utilization7d,
-                    color: ClaudeCodeTheme.info
-                )
-
-                if snapshot.hasExtraUsageSummary {
-                    HStack {
-                        Text("Extra Usage")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(ClaudeCodeTheme.textSecondary)
-                        Spacer()
-                        Text("\(ExtraUsage.formatUSD(snapshot.extraUsageUsedAmountUSD ?? 0)) / \(ExtraUsage.formatUSD(snapshot.extraUsageLimitAmountUSD ?? 0))")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(ClaudeCodeTheme.textPrimary)
-                    }
-                } else {
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                            .font(.caption2)
-                            .foregroundStyle(ClaudeCodeTheme.textSecondary)
-                        Text("Updated \(TempoWidgetFormatting.freshnessLabel(snapshot))")
-                            .font(.caption2)
-                            .foregroundStyle(ClaudeCodeTheme.textSecondary)
-                    }
-                }
+            ViewThatFits(in: .vertical) {
+                summaryContent(snapshot: snapshot, isCompact: false)
+                summaryContent(snapshot: snapshot, isCompact: true)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func summaryContent(snapshot: WidgetUsageSnapshot, isCompact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: isCompact ? 8 : 10) {
+            TempoMacMetricRow(
+                title: "Current Session",
+                value: TempoWidgetFormatting.percentString(snapshot.utilization5h),
+                subtitle: TempoWidgetFormatting.sessionResetString(snapshot),
+                progress: snapshot.utilization5h,
+                color: ClaudeCodeTheme.accent,
+                valueFontSize: isCompact ? 10 : 11,
+                barHeight: isCompact ? 7 : 8,
+                verticalSpacing: isCompact ? 2 : 3
+            )
+
+            TempoMacMetricRow(
+                title: "Weekly Limit",
+                value: TempoWidgetFormatting.percentString(snapshot.utilization7d),
+                subtitle: TempoWidgetFormatting.weeklyResetString(snapshot),
+                progress: snapshot.utilization7d,
+                color: ClaudeCodeTheme.info,
+                valueFontSize: isCompact ? 10 : 11,
+                barHeight: isCompact ? 7 : 8,
+                verticalSpacing: isCompact ? 2 : 3
+            )
+
+            if snapshot.hasExtraUsageSummary {
+                TempoMacExtraUsageRow(snapshot: snapshot, isCompact: isCompact)
+            }
+
+            TempoMacFreshnessFooter(snapshot: snapshot)
         }
     }
 }
@@ -207,44 +155,22 @@ private struct TempoMacCompactWidgetView: View {
 
     var body: some View {
         TempoMacWidgetChrome(snapshot: entry.snapshot, route: .stats, emptySubtitle: "Waiting for poll data", isPreview: entry.isPreview) { snapshot in
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Tempo")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(ClaudeCodeTheme.textSecondary)
-                    Spacer()
-                    if let badge = TempoWidgetFormatting.statusBadge(snapshot) {
-                        TempoMacStatusBadge(text: badge)
-                    }
-                }
-
-                TempoMacCompactMetric(
-                    label: "Session",
-                    value: TempoWidgetFormatting.percentString(snapshot.utilization5h),
-                    progress: snapshot.utilization5h,
-                    color: ClaudeCodeTheme.accent,
-                    subtitle: TempoWidgetFormatting.sessionResetString(snapshot)
-                )
-
-                TempoMacCompactMetric(
-                    label: "Weekly",
-                    value: TempoWidgetFormatting.percentString(snapshot.utilization7d),
-                    progress: snapshot.utilization7d,
-                    color: ClaudeCodeTheme.info,
-                    subtitle: TempoWidgetFormatting.weeklyResetString(snapshot)
+            VStack(alignment: .leading, spacing: 0) {
+                TempoMacSuperscriptMetric(
+                    value: TempoWidgetFormatting.percentValue(snapshot.utilization5h),
+                    label: "Current",
+                    subtitle: TempoWidgetFormatting.sessionResetString(snapshot),
+                    color: ClaudeCodeTheme.accent
                 )
 
                 Spacer(minLength: 0)
 
-                if snapshot.hasExtraUsageSummary {
-                    Text("\(ExtraUsage.formatUSD(snapshot.extraUsageUsedAmountUSD ?? 0)) / \(ExtraUsage.formatUSD(snapshot.extraUsageLimitAmountUSD ?? 0))")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(ClaudeCodeTheme.textPrimary)
-                } else {
-                    Text("Updated \(TempoWidgetFormatting.freshnessLabel(snapshot))")
-                        .font(.caption2)
-                        .foregroundStyle(ClaudeCodeTheme.textSecondary)
-                }
+                TempoMacSuperscriptMetric(
+                    value: TempoWidgetFormatting.percentValue(snapshot.utilization7d),
+                    label: "Weekly",
+                    subtitle: TempoWidgetFormatting.weeklyResetString(snapshot),
+                    color: ClaudeCodeTheme.info
+                )
             }
         }
     }
@@ -299,6 +225,40 @@ private struct TempoMacWidgetChrome<Content: View>: View {
     }
 
     private var waitingView: some View {
+        ViewThatFits(in: .vertical) {
+            richWaitingView
+            compactWaitingView
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var richWaitingView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Label("Tempo Widget", systemImage: "desktopcomputer")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(ClaudeCodeTheme.textPrimary)
+                    Text("Waiting for desktop sync")
+                        .font(.caption)
+                        .foregroundStyle(ClaudeCodeTheme.textSecondary)
+                }
+                Spacer()
+                TempoMacStatusBadge(text: "sync")
+            }
+
+            placeholderMetric(label: "Current Session")
+            placeholderMetric(label: "Weekly Limit")
+
+            Text(emptySubtitle)
+                .font(.caption2)
+                .foregroundStyle(ClaudeCodeTheme.textSecondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+        }
+    }
+
+    private var compactWaitingView: some View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: "desktopcomputer")
                 .font(.title3)
@@ -309,9 +269,28 @@ private struct TempoMacWidgetChrome<Content: View>: View {
             Text(emptySubtitle)
                 .font(.caption)
                 .foregroundStyle(ClaudeCodeTheme.textSecondary)
-            Spacer()
+                .lineLimit(3)
+                .minimumScaleFactor(0.85)
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func placeholderMetric(label: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(ClaudeCodeTheme.textSecondary)
+                Spacer()
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(ClaudeCodeTheme.textTertiary.opacity(0.28))
+                    .frame(width: 34, height: 12)
+            }
+
+            RoundedRectangle(cornerRadius: 999, style: .continuous)
+                .fill(ClaudeCodeTheme.progressTrack.opacity(0.7))
+                .frame(height: 7)
+        }
     }
 }
 
@@ -334,54 +313,130 @@ private struct TempoMacMetricRow: View {
     let subtitle: String
     let progress: Double
     let color: Color
+    let valueFontSize: CGFloat
+    let barHeight: CGFloat
+    let verticalSpacing: CGFloat
+
+    init(
+        title: String,
+        value: String,
+        subtitle: String,
+        progress: Double,
+        color: Color,
+        valueFontSize: CGFloat = 16,
+        barHeight: CGFloat = 7,
+        verticalSpacing: CGFloat = 4
+    ) {
+        self.title = title
+        self.value = value
+        self.subtitle = subtitle
+        self.progress = progress
+        self.color = color
+        self.valueFontSize = valueFontSize
+        self.barHeight = barHeight
+        self.verticalSpacing = verticalSpacing
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: verticalSpacing) {
             HStack(alignment: .firstTextBaseline) {
                 Text(title)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(ClaudeCodeTheme.textPrimary)
                 Spacer()
                 Text(value)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(.system(size: valueFontSize, weight: .bold, design: .rounded))
                     .foregroundStyle(color)
             }
 
-            TempoMacBar(progress: progress, color: color, height: 7)
+            TempoMacBar(progress: progress, color: color, height: barHeight)
 
             Text(subtitle)
-                .font(.caption2)
+                .font(.system(size: 10, weight: .regular, design: .rounded))
                 .foregroundStyle(ClaudeCodeTheme.textSecondary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.6)
         }
     }
 }
 
-private struct TempoMacCompactMetric: View {
-    let label: String
-    let value: String
-    let progress: Double
-    let color: Color
-    let subtitle: String
+private struct TempoMacExtraUsageRow: View {
+    let snapshot: WidgetUsageSnapshot
+    let isCompact: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(label)
-                    .font(.caption.weight(.semibold))
+        VStack(alignment: .leading, spacing: isCompact ? 4 : 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Extra Usage")
+                    .font((isCompact ? Font.system(size: 10) : .caption).weight(.semibold))
                     .foregroundStyle(ClaudeCodeTheme.textSecondary)
-                Spacer()
-                Text(value)
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundStyle(color)
+                Spacer(minLength: 6)
+                Text(TempoWidgetFormatting.extraUsageSummaryString(snapshot, compact: false) ?? "")
+                    .font((isCompact ? Font.system(size: 10) : .caption).monospacedDigit())
+                    .foregroundStyle(ClaudeCodeTheme.accentLight)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
 
-            TempoMacBar(progress: progress, color: color, height: 6)
+            TempoMacBar(
+                progress: extraUsageProgress,
+                color: ClaudeCodeTheme.accentLight,
+                height: isCompact ? 7 : 8
+            )
+        }
+    }
+
+    private var extraUsageProgress: Double {
+        let rawValue = snapshot.extraUsageUtilizationPercent ?? 0
+        return rawValue > 1 ? rawValue / 100.0 : rawValue
+    }
+}
+
+private struct TempoMacFreshnessFooter: View {
+    let snapshot: WidgetUsageSnapshot
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Spacer()
+            Image(systemName: "clock")
+                .font(.caption2)
+                .foregroundStyle(ClaudeCodeTheme.textSecondary)
+            Text(TempoWidgetFormatting.freshnessLabel(snapshot))
+                .font(.system(size: 10, weight: .regular, design: .rounded))
+                .foregroundStyle(ClaudeCodeTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
+    }
+}
+
+private struct TempoMacSuperscriptMetric: View {
+    let value: Int
+    let label: String
+    let subtitle: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
+                Text("\(value)")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .foregroundStyle(color)
+                Text("%")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(color)
+                Spacer(minLength: 0)
+            }
+
+            Text(label)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(ClaudeCodeTheme.textPrimary)
 
             Text(subtitle)
                 .font(.caption2)
                 .foregroundStyle(ClaudeCodeTheme.textSecondary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
     }
 }
@@ -412,33 +467,33 @@ private struct TempoMacDualRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(ClaudeCodeTheme.progressTrack, lineWidth: 10)
+                .stroke(ClaudeCodeTheme.ringTrack.opacity(0.7), lineWidth: 13)
 
             Circle()
                 .trim(from: 0, to: max(0, min(weeklyProgress, 1)))
-                .stroke(ClaudeCodeTheme.info, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                .stroke(ClaudeCodeTheme.info.opacity(0.9), style: StrokeStyle(lineWidth: 13, lineCap: .round))
                 .rotationEffect(.degrees(-90))
 
             Circle()
-                .stroke(ClaudeCodeTheme.progressTrack.opacity(0.9), lineWidth: 12)
-                .padding(20)
+                .stroke(ClaudeCodeTheme.ringTrackInner.opacity(0.9), lineWidth: 13)
+                .padding(22)
 
             Circle()
                 .trim(from: 0, to: max(0, min(sessionProgress, 1)))
-                .stroke(ClaudeCodeTheme.accent, style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                .stroke(ClaudeCodeTheme.accentLight, style: StrokeStyle(lineWidth: 13, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .padding(20)
+                .padding(22)
 
-            VStack(spacing: 0) {
+            VStack(spacing: 1) {
                 Text(TempoWidgetFormatting.percentString(sessionProgress))
-                    .font(.system(size: 27, weight: .bold, design: .rounded))
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
                     .foregroundStyle(ClaudeCodeTheme.textPrimary)
                 Text("session")
-                    .font(.caption2)
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
                     .foregroundStyle(ClaudeCodeTheme.textSecondary)
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 4)
     }
 }
 
