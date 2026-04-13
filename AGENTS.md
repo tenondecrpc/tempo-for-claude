@@ -36,7 +36,7 @@ Code shared between targets lives in `Shared/` (auto-synced via `PBXFileSystemSy
 ## References
 
 - Code style, patterns, and architecture: `docs/CONVENTIONS.md`
-- Full roadmap: `docs/FUTURE_PLAN.md`
+- Full roadmap and backlog: `docs/PLAN.md`
 
 ## Workflow
 

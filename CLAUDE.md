@@ -29,7 +29,7 @@ Open `Tempo.xcodeproj` in Xcode. No CLI build system.
 
 ## Shared Logic
 
-Code shared between targets lives in `Shared/`. The project uses `PBXFileSystemSynchronizedRootGroup` — files added to `Shared/` are automatically included in all linked targets, no manual Target Membership needed.
+Code shared between targets lives in `Shared/`. The project uses `PBXFileSystemSynchronizedRootGroup` - files added to `Shared/` are automatically included in all linked targets, no manual Target Membership needed.
 
 **Belongs in `Shared/`:** data models, pure business logic (no `UIKit`/`WatchKit`/`SwiftUI`), shared enums/constants.
 
