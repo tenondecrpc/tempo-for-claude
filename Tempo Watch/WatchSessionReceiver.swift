@@ -48,6 +48,8 @@ final class WatchSessionReceiver: NSObject, WCSessionDelegate {
             applyUsageState(userInfo)
         case "SessionInfo":
             applySessionInfo(userInfo)
+        case "AppearanceMode":
+            applyAppearanceMode(userInfo)
         default:
             return
         }
@@ -73,18 +75,21 @@ final class WatchSessionReceiver: NSObject, WCSessionDelegate {
         )
 
         let watchAlertsEnabled = userInfo["watchAlertsEnabled"] as? Bool ?? SessionAlertPreferences.default.watchAlertsEnabled
+        let appearanceMode = Self.appearanceMode(from: userInfo)
 
         var snapshots: [UsageHistorySnapshot]? = nil
         if let historyData = userInfo["usageHistory"] as? Data {
             snapshots = try? JSONDecoder().decode([UsageHistorySnapshot].self, from: historyData)
         }
 
-        let appGroupID = "group.com.tenondecrpc.tempo.watch"
-        UserDefaults(suiteName: appGroupID)?.set(utilization5h, forKey: "complication_utilization5h")
+        let watchDefaults = UserDefaults(suiteName: TempoWatchShared.appGroupIdentifier)
+        watchDefaults?.set(utilization5h, forKey: TempoWatchShared.complicationUtilization5hKey)
+        watchDefaults?.set(appearanceMode.rawValue, forKey: TempoWatchShared.appearanceModeKey)
         WidgetCenter.shared.reloadAllTimelines()
 
         Task { @MainActor in
             self.store.apply(state)
+            self.store.applyAppearanceMode(appearanceMode)
             self.store.setWatchAlertsEnabledInPreferences(watchAlertsEnabled)
             if let snapshots {
                 self.store.applyHistory(snapshots)
@@ -104,6 +109,7 @@ final class WatchSessionReceiver: NSObject, WCSessionDelegate {
         else { return }
 
         let watchAlertsEnabled = userInfo["watchAlertsEnabled"] as? Bool ?? SessionAlertPreferences.default.watchAlertsEnabled
+        let appearanceMode = Self.appearanceMode(from: userInfo)
 
         let sessionInfo = SessionInfo(
             sessionId: sessionId,
@@ -116,11 +122,31 @@ final class WatchSessionReceiver: NSObject, WCSessionDelegate {
 
         Task { @MainActor in
             self.store.applySession(sessionInfo)
+            self.store.applyAppearanceMode(appearanceMode)
             self.store.setWatchAlertsEnabledInPreferences(watchAlertsEnabled)
         }
         alertManager.notifySessionCompletion(
             for: sessionInfo,
             enabledInPreferences: watchAlertsEnabled
         )
+    }
+
+    private func applyAppearanceMode(_ userInfo: [String: Any]) {
+        let appearanceMode = Self.appearanceMode(from: userInfo)
+        let watchDefaults = UserDefaults(suiteName: TempoWatchShared.appGroupIdentifier)
+        watchDefaults?.set(appearanceMode.rawValue, forKey: TempoWatchShared.appearanceModeKey)
+        WidgetCenter.shared.reloadAllTimelines()
+
+        Task { @MainActor in
+            self.store.applyAppearanceMode(appearanceMode)
+        }
+    }
+
+    private static func appearanceMode(from userInfo: [String: Any]) -> AppearanceMode {
+        if let rawValue = userInfo["appearanceMode"] as? String,
+           let appearanceMode = AppearanceMode(rawValue: rawValue) {
+            return appearanceMode
+        }
+        return .dark
     }
 }

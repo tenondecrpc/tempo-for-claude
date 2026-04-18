@@ -60,6 +60,10 @@ final class MacAppCoordinator {
         settings.onSessionAlertPreferencesChanged = { [weak self] preferences in
             self?.syncAlertPreferencesToICloud(preferences)
         }
+        settings.onAppearanceModeChanged = { [weak self] appearanceMode in
+            self?.syncAppearanceModeToICloud(appearanceMode)
+            self?.refreshPublishedWidgetAppearance()
+        }
 
         launchAtLoginManager.refresh()
         if settings.launchAtLogin != launchAtLoginManager.isEnabled {
@@ -68,6 +72,8 @@ final class MacAppCoordinator {
         settings.updateLaunchAtLoginFromSystem(launchAtLoginManager.isEnabled)
 
         seedInitialWidgetSnapshotIfNeeded()
+        syncAppearanceModeToICloud(settings.appearanceMode)
+        refreshPublishedWidgetAppearance()
     }
 
     func onLaunch() async {
@@ -135,10 +141,31 @@ final class MacAppCoordinator {
     }
 
     private func publishWidgetSnapshot(from usage: UsageState, updatedAt: Date) {
-        let snapshot = WidgetUsageSnapshot(usage: usage, updatedAt: updatedAt)
+        let snapshot = WidgetUsageSnapshot(
+            usage: usage,
+            updatedAt: updatedAt,
+            appearanceMode: settings.appearanceMode
+        )
         if TempoWidgetSnapshotStore.write(snapshot, platform: .macOS) {
             TempoWidgetSnapshotStore.reloadTimelines(for: .macOS)
         }
+    }
+
+    private func refreshPublishedWidgetAppearance() {
+        guard let snapshot = TempoWidgetSnapshotStore.read(platform: .macOS) else { return }
+        let refreshedSnapshot = WidgetUsageSnapshot(
+            snapshot: snapshot,
+            appearanceMode: settings.appearanceMode
+        )
+        if TempoWidgetSnapshotStore.write(refreshedSnapshot, platform: .macOS) {
+            TempoWidgetSnapshotStore.reloadTimelines(for: .macOS)
+        }
+    }
+
+    private func syncAppearanceModeToICloud(_ appearanceMode: AppearanceMode) {
+        do {
+            try AppearanceModeSync.write(appearanceMode)
+        } catch {}
     }
 
     private func seedInitialWidgetSnapshotIfNeeded() {
@@ -190,7 +217,8 @@ struct TempoMacApp: App {
         MenuBarExtra {
             MacMenuView(coordinator: coordinator)
                 .frame(width: 320)
-                .preferredColorScheme(coordinator.settings.preferredColorScheme)
+                .applyClaudeAppearance(coordinator.settings.appearanceMode)
+                .syncWindowAppearance(coordinator.settings.appearanceMode)
         } label: {
             MenuBarIconView(
                 usage: coordinator.poller.latestUsage,
@@ -211,13 +239,15 @@ struct TempoMacApp: App {
         Window("Welcome", id: "welcome") {
             WelcomeWindowView(coordinator: coordinator)
                 .frame(minWidth: 580, minHeight: 480)
-                .preferredColorScheme(coordinator.settings.preferredColorScheme)
+                .applyClaudeAppearance(coordinator.settings.appearanceMode)
+                .syncWindowAppearance(coordinator.settings.appearanceMode)
         }
         .windowResizability(.contentSize)
 
         Window("Tempo for Claude", id: "stats-detail") {
             DetailWindowView(coordinator: coordinator, history: coordinator.history, localDB: coordinator.localDB)
-                .preferredColorScheme(coordinator.settings.preferredColorScheme)
+                .applyClaudeAppearance(coordinator.settings.appearanceMode)
+                .syncWindowAppearance(coordinator.settings.appearanceMode)
         }
         .windowResizability(.contentSize)
         .handlesExternalEvents(matching: Set([
@@ -227,7 +257,8 @@ struct TempoMacApp: App {
 
         Settings {
             PreferencesWindowView(coordinator: coordinator)
-                .preferredColorScheme(coordinator.settings.preferredColorScheme)
+                .applyClaudeAppearance(coordinator.settings.appearanceMode)
+                .syncWindowAppearance(coordinator.settings.appearanceMode)
         }
         .windowResizability(.contentSize)
     }

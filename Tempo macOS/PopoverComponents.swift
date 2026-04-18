@@ -29,6 +29,9 @@ struct UsageRingView: View {
     var centerLabel: String? = nil
 
     var body: some View {
+        let sessionColor = UtilizationSeverity(utilization: sessionProgress).usageColor(normal: ClaudeCodeTheme.Usage.session)
+        let weeklyColor = UtilizationSeverity(utilization: weeklyProgress).usageColor(normal: ClaudeCodeTheme.Usage.weekly)
+
         ZStack {
             // Outer track (weekly)
             Circle()
@@ -37,7 +40,7 @@ struct UsageRingView: View {
             // Outer fill (weekly)
             Circle()
                 .trim(from: 0, to: min(max(weeklyProgress, 0), 1))
-                .stroke(ClaudeCodeTheme.info, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                .stroke(weeklyColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                 .rotationEffect(.degrees(-90))
 
             // Inner track (session)
@@ -48,7 +51,7 @@ struct UsageRingView: View {
             // Inner fill (session)
             Circle()
                 .trim(from: 0, to: min(max(sessionProgress, 0), 1))
-                .stroke(ClaudeCodeTheme.accent, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                .stroke(sessionColor, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .padding(18)
 
@@ -84,7 +87,7 @@ struct SessionPillChip: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(value)
                     .font(.callout.monospacedDigit())
-                    .foregroundStyle(ClaudeCodeTheme.textPrimary)
+                    .foregroundStyle(accentColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.9)
                 Text(label)
@@ -265,11 +268,11 @@ struct MenuBarHeaderView: View {
 
     private var dotColor: Color {
         switch serviceState {
-        case .operational: return ClaudeCodeTheme.success
-        case .degraded:    return ClaudeCodeTheme.warning
-        case .majorOutage: return ClaudeCodeTheme.error
-        case .stale:       return ClaudeCodeTheme.warning
-        case .unavailable: return ClaudeCodeTheme.textSecondary
+        case .operational: return ClaudeCodeTheme.ServiceStatus.operational
+        case .degraded:    return ClaudeCodeTheme.ServiceStatus.degraded
+        case .majorOutage: return ClaudeCodeTheme.ServiceStatus.majorOutage
+        case .stale:       return ClaudeCodeTheme.ServiceStatus.stale
+        case .unavailable: return ClaudeCodeTheme.ServiceStatus.unavailable
         }
     }
 }
@@ -311,9 +314,10 @@ struct ServiceStatusBannerView: View {
 
     private var bannerColor: Color {
         switch state {
-        case .majorOutage: return ClaudeCodeTheme.error
-        case .degraded, .stale: return ClaudeCodeTheme.warning
-        case .unavailable: return ClaudeCodeTheme.textSecondary
+        case .majorOutage: return ClaudeCodeTheme.ServiceStatus.majorOutage
+        case .degraded: return ClaudeCodeTheme.ServiceStatus.degraded
+        case .stale: return ClaudeCodeTheme.ServiceStatus.stale
+        case .unavailable: return ClaudeCodeTheme.ServiceStatus.unavailable
         case .operational: return .clear
         }
     }

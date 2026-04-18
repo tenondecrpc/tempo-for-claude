@@ -22,6 +22,7 @@ final class MacSettingsStore {
     var onServiceStatusMonitoringChanged: ((Bool) -> Void)?
     var onSyncHistoryViaICloudChanged: ((Bool) -> Void)?
     var onSessionAlertPreferencesChanged: ((SessionAlertPreferences) -> Void)?
+    var onAppearanceModeChanged: ((AppearanceMode) -> Void)?
 
     var launchAtLogin: Bool {
         didSet {
@@ -106,6 +107,9 @@ final class MacSettingsStore {
     var appearanceMode: AppearanceMode {
         didSet {
             defaults.set(appearanceMode.rawValue, forKey: Key.appearanceMode)
+            if !isHydrating {
+                onAppearanceModeChanged?(appearanceMode)
+            }
         }
     }
 

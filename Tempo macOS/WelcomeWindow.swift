@@ -25,7 +25,6 @@ struct WelcomeWindowView: View {
                 welcomeView
             }
         }
-        .preferredColorScheme(.dark)
         .onChange(of: coordinator.authState.isAuthenticated) { _, isAuthenticated in
             if isAuthenticated && !isRestoringSession {
                 dismissWindow(id: "welcome")
@@ -207,8 +206,8 @@ struct WelcomeWindowView: View {
 
                 // Pill chips
                 HStack(spacing: 6) {
-                    SessionPillChip(value: "49%", label: "Resets in 13 min", accentColor: ClaudeCodeTheme.accent)
-                    SessionPillChip(value: "4%", label: "Resets Sun", accentColor: ClaudeCodeTheme.info)
+                    SessionPillChip(value: "49%", label: "Resets in 13 min", accentColor: ClaudeCodeTheme.Usage.session)
+                    SessionPillChip(value: "4%", label: "Resets Sun", accentColor: ClaudeCodeTheme.Usage.weekly)
                 }
             }
             .padding(14)

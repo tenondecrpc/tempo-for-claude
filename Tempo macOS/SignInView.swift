@@ -94,6 +94,5 @@ struct NotSignedInMenuView: View {
             .padding(.vertical, 10)
         }
         .background(ClaudeCodeTheme.background)
-        .preferredColorScheme(.dark)
     }
 }
