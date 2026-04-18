@@ -134,6 +134,8 @@ struct BurnRateCard: View {
 
             if let extra = extraUsage, extra.isEnabled,
                let used = extra.usedCreditsAmount, let limit = extra.monthlyLimitAmount {
+                let extraColor = UtilizationSeverity(utilization: (extra.utilization ?? 0) / 100.0).usageColor(normal: ClaudeCodeTheme.info)
+
                 Divider()
                     .overlay(ClaudeCodeTheme.progressTrack)
 
@@ -147,7 +149,7 @@ struct BurnRateCard: View {
                     UsageProgressBar(
                         progress: (extra.utilization ?? 0) / 100.0,
                         height: 4,
-                        color: ClaudeCodeTheme.info
+                        color: extraColor
                     )
                 }
             }

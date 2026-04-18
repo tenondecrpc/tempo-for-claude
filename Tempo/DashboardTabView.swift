@@ -117,6 +117,8 @@ struct DashboardTabView: View {
         }
 
         if let extraUsage = usage.extraUsage, extraUsage.isEnabled {
+            let extraColor = UtilizationSeverity(utilization: (extraUsage.utilization ?? 0) / 100.0).usageColor(normal: ClaudeCodeTheme.info)
+
             card {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Extra Usage")
@@ -131,7 +133,7 @@ struct DashboardTabView: View {
                     }
 
                     ProgressView(value: (extraUsage.utilization ?? 0) / 100.0)
-                        .tint(ClaudeCodeTheme.info)
+                        .tint(extraColor)
                         .background(ClaudeCodeTheme.progressTrack)
                 }
             }

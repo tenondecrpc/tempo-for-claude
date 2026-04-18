@@ -259,9 +259,11 @@ struct DetailWindowView: View {
 
     // Extra Usage card
     private func extraUsageCard(extra: ExtraUsage) -> some View {
-        HStack(spacing: 0) {
+        let extraColor = UtilizationSeverity(utilization: (extra.utilization ?? 0) / 100.0).usageColor(normal: ClaudeCodeTheme.info)
+
+        return HStack(spacing: 0) {
             Rectangle()
-                .fill(ClaudeCodeTheme.info)
+                .fill(extraColor)
                 .frame(width: 4)
             VStack(alignment: .leading, spacing: 8) {
                 if let used = extra.usedCreditsAmount, let limit = extra.monthlyLimitAmount {
@@ -270,7 +272,7 @@ struct DetailWindowView: View {
                         .foregroundStyle(ClaudeCodeTheme.textPrimary)
                     UsageProgressBar(
                         progress: (extra.utilization ?? 0) / 100.0,
-                        color: ClaudeCodeTheme.info
+                        color: extraColor
                     )
                 }
                 Text("Resets monthly")

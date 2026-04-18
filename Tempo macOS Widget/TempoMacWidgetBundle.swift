@@ -373,6 +373,15 @@ private struct TempoMacExtraUsageRow: View {
     let snapshot: WidgetUsageSnapshot
     let isCompact: Bool
 
+    private var extraUsageProgress: Double {
+        let rawValue = snapshot.extraUsageUtilizationPercent ?? 0
+        return rawValue > 1 ? rawValue / 100.0 : rawValue
+    }
+
+    private var extraColor: Color {
+        UtilizationSeverity(utilization: extraUsageProgress).usageColor(normal: ClaudeCodeTheme.info)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: isCompact ? 4 : 5) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -382,22 +391,17 @@ private struct TempoMacExtraUsageRow: View {
                 Spacer(minLength: 6)
                 Text(TempoWidgetFormatting.extraUsageSummaryString(snapshot, compact: false) ?? "")
                     .font((isCompact ? Font.system(size: 10) : .caption).monospacedDigit())
-                    .foregroundStyle(ClaudeCodeTheme.accentLight)
+                    .foregroundStyle(extraColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
             }
 
             TempoMacBar(
                 progress: extraUsageProgress,
-                color: ClaudeCodeTheme.accentLight,
+                color: extraColor,
                 height: isCompact ? 7 : 8
             )
         }
-    }
-
-    private var extraUsageProgress: Double {
-        let rawValue = snapshot.extraUsageUtilizationPercent ?? 0
-        return rawValue > 1 ? rawValue / 100.0 : rawValue
     }
 }
 
