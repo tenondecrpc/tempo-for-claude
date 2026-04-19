@@ -40,9 +40,7 @@ struct TrendView: View {
                                 VStack {
                                     Spacer(minLength: 0)
                                     RoundedRectangle(cornerRadius: 3)
-                                        .fill(day.isToday
-                                              ? ClaudeCodeTheme.accent
-                                              : ClaudeCodeTheme.textSecondary.opacity(0.6))
+                                        .fill(barColor(for: day))
                                         .frame(height: max(2, barAreaHeight * day.utilization))
                                 }
                                 .frame(height: barAreaHeight)
@@ -81,7 +79,7 @@ struct TrendView: View {
             Text("\(Int(value * 100))%")
                 .font(.system(.caption, design: .rounded))
                 .fontWeight(.semibold)
-                .foregroundStyle(ClaudeCodeTheme.textSecondary)
+                .foregroundStyle(UtilizationSeverity(utilization: value).usageColor(normal: ClaudeCodeTheme.textSecondary))
         }
     }
 
@@ -129,6 +127,11 @@ struct TrendView: View {
     private func dayLetter(weekday: Int) -> String {
         // weekday: 1=Sun, 2=Mon, ..., 7=Sat
         ["S", "M", "T", "W", "T", "F", "S"][weekday - 1]
+    }
+
+    private func barColor(for day: DayBar) -> Color {
+        let baseColor = day.isToday ? ClaudeCodeTheme.Usage.session : ClaudeCodeTheme.textSecondary.opacity(0.6)
+        return UtilizationSeverity(utilization: day.utilization).usageColor(normal: baseColor)
     }
 }
 

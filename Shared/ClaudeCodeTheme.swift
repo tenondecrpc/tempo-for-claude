@@ -1,6 +1,8 @@
 import SwiftUI
 #if os(macOS)
 import AppKit
+#elseif canImport(UIKit)
+import UIKit
 #endif
 
 // MARK: - AppearanceMode
@@ -25,15 +27,53 @@ enum AppearanceMode: String, CaseIterable, Codable {
         case .system: return nil
         }
     }
+
+    func resolved(for colorScheme: ColorScheme) -> AppearanceMode {
+        switch self {
+        case .dark:
+            .dark
+        case .light:
+            .light
+        case .system:
+            colorScheme == .light ? .light : .dark
+        }
+    }
+
+    #if os(macOS)
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .dark:
+            NSAppearance(named: .darkAqua)
+        case .light:
+            NSAppearance(named: .aqua)
+        case .system:
+            nil
+        }
+    }
+    #endif
 }
 
 // MARK: - ClaudeCodeTheme
 
 /// Unified design token system sourced from the official Claude Code Dark/Light palette.
-/// On macOS, tokens resolve adaptively based on the app's effective appearance
-/// (driven by `preferredColorScheme` in the view hierarchy).
-/// On watchOS and iOS, all tokens resolve to the dark palette.
+///
+/// On macOS/iOS, tokens resolve through platform-native dynamic color providers so they
+/// automatically track the effective appearance of the hosting window or trait collection.
+/// On watchOS, where dynamic providers are unavailable, they resolve through a process
+/// global updated by the view tree via `setResolvedAppearanceMode`.
 enum ClaudeCodeTheme {
+    #if os(watchOS)
+    private static var resolvedAppearanceMode: AppearanceMode = .dark
+
+    static func setResolvedAppearanceMode(_ mode: AppearanceMode) {
+        guard mode != .system else { return }
+        resolvedAppearanceMode = mode
+    }
+    #else
+    /// No-op on macOS/iOS: dynamic platform colors follow the view hierarchy's
+    /// effective appearance, so no global mirror is required.
+    static func setResolvedAppearanceMode(_ mode: AppearanceMode) {}
+    #endif
 
     // MARK: Backgrounds
 
@@ -98,48 +138,156 @@ enum ClaudeCodeTheme {
     // MARK: Ring Tracks
 
     static var ringTrack: Color {
-        #if os(macOS)
-        adaptiveNS(dark: NSColor.white.withAlphaComponent(0.15),
-                   light: NSColor.black.withAlphaComponent(0.10))
-        #else
-        .white.opacity(0.15)
-        #endif
+        adaptiveRGBA(
+            dark: (1.0, 1.0, 1.0, 0.15),
+            light: (0.0, 0.0, 0.0, 0.10)
+        )
     }
     static var ringTrackInner: Color {
-        #if os(macOS)
-        adaptiveNS(dark: NSColor.white.withAlphaComponent(0.10),
-                   light: NSColor.black.withAlphaComponent(0.08))
-        #else
-        .white.opacity(0.10)
-        #endif
+        adaptiveRGBA(
+            dark: (1.0, 1.0, 1.0, 0.10),
+            light: (0.0, 0.0, 0.0, 0.08)
+        )
     }
 
     // MARK: - Private Helpers
 
-    /// Returns an adaptive Color using NSColor's dynamic provider on macOS,
-    /// or the dark variant on watchOS/iOS.
-    private static func adaptive(
+    fileprivate static func adaptive(
         dark d: (CGFloat, CGFloat, CGFloat),
         light l: (CGFloat, CGFloat, CGFloat)
     ) -> Color {
         #if os(macOS)
-        Color(NSColor(name: nil) { appearance in
-            if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-                return NSColor(red: d.0, green: d.1, blue: d.2, alpha: 1)
-            } else {
-                return NSColor(red: l.0, green: l.1, blue: l.2, alpha: 1)
-            }
-        })
+        return Color(dynamicNSColor(dark: d, light: l))
+        #elseif canImport(UIKit) && !os(watchOS)
+        return Color(dynamicUIColor(dark: d, light: l))
         #else
-        Color(red: d.0, green: d.1, blue: d.2)
+        let resolved = resolvedRGB(dark: d, light: l)
+        return Color(red: resolved.0, green: resolved.1, blue: resolved.2)
+        #endif
+    }
+
+    fileprivate static func adaptiveRGBA(
+        dark d: (CGFloat, CGFloat, CGFloat, CGFloat),
+        light l: (CGFloat, CGFloat, CGFloat, CGFloat)
+    ) -> Color {
+        #if os(macOS)
+        return Color(dynamicNSColor(dark: d, light: l))
+        #elseif canImport(UIKit) && !os(watchOS)
+        return Color(dynamicUIColor(dark: d, light: l))
+        #else
+        let resolved = resolvedRGBA(dark: d, light: l)
+        return Color(.sRGB, red: resolved.0, green: resolved.1, blue: resolved.2, opacity: resolved.3)
         #endif
     }
 
     #if os(macOS)
-    private static func adaptiveNS(dark d: NSColor, light l: NSColor) -> Color {
-        Color(NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? d : l
-        })
+    fileprivate static func dynamicNSColor(
+        dark d: (CGFloat, CGFloat, CGFloat),
+        light l: (CGFloat, CGFloat, CGFloat)
+    ) -> NSColor {
+        NSColor(name: nil) { appearance in
+            if appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua {
+                return NSColor(red: d.0, green: d.1, blue: d.2, alpha: 1)
+            }
+            return NSColor(red: l.0, green: l.1, blue: l.2, alpha: 1)
+        }
+    }
+
+    fileprivate static func dynamicNSColor(
+        dark d: (CGFloat, CGFloat, CGFloat, CGFloat),
+        light l: (CGFloat, CGFloat, CGFloat, CGFloat)
+    ) -> NSColor {
+        NSColor(name: nil) { appearance in
+            if appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua {
+                return NSColor(red: d.0, green: d.1, blue: d.2, alpha: d.3)
+            }
+            return NSColor(red: l.0, green: l.1, blue: l.2, alpha: l.3)
+        }
     }
     #endif
+
+    #if canImport(UIKit) && !os(watchOS)
+    fileprivate static func dynamicUIColor(
+        dark d: (CGFloat, CGFloat, CGFloat),
+        light l: (CGFloat, CGFloat, CGFloat)
+    ) -> UIColor {
+        UIColor { traits in
+            if traits.userInterfaceStyle == .dark {
+                return UIColor(red: d.0, green: d.1, blue: d.2, alpha: 1)
+            }
+            return UIColor(red: l.0, green: l.1, blue: l.2, alpha: 1)
+        }
+    }
+
+    fileprivate static func dynamicUIColor(
+        dark d: (CGFloat, CGFloat, CGFloat, CGFloat),
+        light l: (CGFloat, CGFloat, CGFloat, CGFloat)
+    ) -> UIColor {
+        UIColor { traits in
+            if traits.userInterfaceStyle == .dark {
+                return UIColor(red: d.0, green: d.1, blue: d.2, alpha: d.3)
+            }
+            return UIColor(red: l.0, green: l.1, blue: l.2, alpha: l.3)
+        }
+    }
+    #endif
+
+    #if os(watchOS)
+    private static func resolvedRGB(
+        dark d: (CGFloat, CGFloat, CGFloat),
+        light l: (CGFloat, CGFloat, CGFloat)
+    ) -> (CGFloat, CGFloat, CGFloat) {
+        resolvedAppearanceMode == .light ? l : d
+    }
+
+    private static func resolvedRGBA(
+        dark d: (CGFloat, CGFloat, CGFloat, CGFloat),
+        light l: (CGFloat, CGFloat, CGFloat, CGFloat)
+    ) -> (CGFloat, CGFloat, CGFloat, CGFloat) {
+        resolvedAppearanceMode == .light ? l : d
+    }
+    #endif
+}
+
+extension ClaudeCodeTheme {
+    enum ServiceStatus {
+        static var operational: Color { ClaudeCodeTheme.success }
+        static var degraded: Color { ClaudeCodeTheme.warning }
+        static var majorOutage: Color { ClaudeCodeTheme.error }
+        static var stale: Color { ClaudeCodeTheme.warning }
+        static var unavailable: Color { ClaudeCodeTheme.textSecondary }
+    }
+
+    enum Usage {
+        static var session: Color { ClaudeCodeTheme.accent }
+        static var sessionEmphasis: Color { ClaudeCodeTheme.accentLight }
+        static var weekly: Color { ClaudeCodeTheme.info }
+        static var watchSession: Color { ClaudeCodeTheme.success }
+        static var watchWeekly: Color { ClaudeCodeTheme.highlight }
+        static var warning: Color { ClaudeCodeTheme.warning }
+        // A stronger warm red than the core error token so 100% usage
+        // reads as a distinct limit state instead of blending with the
+        // app's terracotta accent.
+        static var critical: Color {
+            ClaudeCodeTheme.adaptive(
+                dark: (0.8980, 0.3529, 0.2902),
+                light: (0.7176, 0.2314, 0.1804)
+            )
+        }
+
+        #if os(macOS)
+        static var menuBarWarning: NSColor {
+            ClaudeCodeTheme.dynamicNSColor(
+                dark: (0.9098, 0.7882, 0.4196),
+                light: (0.5412, 0.3843, 0.1255)
+            )
+        }
+        static var menuBarCritical: NSColor {
+            ClaudeCodeTheme.dynamicNSColor(
+                dark: (0.8980, 0.3529, 0.2902),
+                light: (0.7176, 0.2314, 0.1804)
+            )
+        }
+        #endif
+    }
 }

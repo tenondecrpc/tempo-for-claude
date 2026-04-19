@@ -41,7 +41,6 @@ struct ContentView: View {
                 showsLaunchOverlay = false
             }
         }
-        .preferredColorScheme(.dark)
         .tint(ClaudeCodeTheme.accent)
         .onChange(of: widgetRoute, initial: true) { _, route in
             guard let route else { return }

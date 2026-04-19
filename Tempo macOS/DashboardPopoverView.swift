@@ -68,6 +68,9 @@ struct DashboardPopoverView: View {
         now: Date,
         use24HourTime: Bool
     ) -> some View {
+        let sessionColor = UtilizationSeverity(utilization: usage.utilization5h).usageColor(normal: ClaudeCodeTheme.Usage.session)
+        let weeklyColor = UtilizationSeverity(utilization: usage.utilization7d).usageColor(normal: ClaudeCodeTheme.Usage.weekly)
+
         VStack(alignment: .leading, spacing: 13) {
             if usage.isDoubleLimitPromoActive == true {
                 HStack(spacing: 6) {
@@ -98,7 +101,7 @@ struct DashboardPopoverView: View {
                         now: now,
                         use24HourTime: use24HourTime
                     ),
-                    accentColor: ClaudeCodeTheme.accent
+                    accentColor: sessionColor
                 )
                 SessionPillChip(
                     value: "\(Int(usage.utilization7d * 100))%",
@@ -106,7 +109,7 @@ struct DashboardPopoverView: View {
                         resetAt: usage.resetAt7d,
                         use24HourTime: use24HourTime
                     ),
-                    accentColor: ClaudeCodeTheme.info
+                    accentColor: weeklyColor
                 )
             }
 

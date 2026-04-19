@@ -33,18 +33,25 @@ final class AppCoordinator {
                 "TempoApp received usage state utilization5h=\(state.utilization5h) utilization7d=\(state.utilization7d) historyCount=\(iCloudReader?.historySnapshots.count ?? 0)"
             )
             let updatedAt = iCloudReader?.lastReceivedAt ?? Date()
-            let snapshot = WidgetUsageSnapshot(usage: state, updatedAt: updatedAt)
+            let appearanceMode = store?.appearanceMode ?? .dark
+            let snapshot = WidgetUsageSnapshot(
+                usage: state,
+                updatedAt: updatedAt,
+                appearanceMode: appearanceMode
+            )
             if TempoWidgetSnapshotStore.write(snapshot, platform: .iOS) {
                 TempoWidgetSnapshotStore.reloadTimelines(for: .iOS)
             }
             relay?.send(
                 state,
                 history: iCloudReader?.historySnapshots ?? [],
-                alertPreferences: store?.sessionAlertPreferences ?? .default
+                alertPreferences: store?.sessionAlertPreferences ?? .default,
+                appearanceMode: appearanceMode
             )
         }
         iCloudReader.onSessionInfo = { [weak relay, weak store, weak phoneAlertManager] (session: SessionInfo) in
             let preferences = store?.sessionAlertPreferences ?? .default
+            let appearanceMode = store?.appearanceMode ?? .dark
             DevLog.trace(
                 "AlertTrace",
                 "TempoApp received synced session id=\(session.sessionId) iPhoneAlerts=\(preferences.iPhoneAlertsEnabled) watchAlerts=\(preferences.watchAlertsEnabled)"
@@ -53,7 +60,7 @@ final class AppCoordinator {
                 for: session,
                 enabledInPreferences: preferences.iPhoneAlertsEnabled
             )
-            relay?.sendSession(session, alertPreferences: preferences)
+            relay?.sendSession(session, alertPreferences: preferences, appearanceMode: appearanceMode)
         }
         iCloudReader.onAlertPreferences = { [weak store] preferences in
             DevLog.trace(
@@ -64,19 +71,39 @@ final class AppCoordinator {
                 store?.applySyncedAlertPreferences(preferences)
             }
         }
+        iCloudReader.onAppearanceMode = { [weak self] appearanceMode in
+            Task { @MainActor in
+                self?.store.applySyncedAppearanceMode(appearanceMode)
+                self?.refreshWidgetAppearance(appearanceMode)
+                self?.relay.sendAppearanceMode(appearanceMode)
+                if let state = self?.iCloudReader.latestUsage {
+                    self?.relay.send(
+                        state,
+                        history: self?.iCloudReader.historySnapshots ?? [],
+                        alertPreferences: self?.store.sessionAlertPreferences ?? .default,
+                        appearanceMode: appearanceMode
+                    )
+                }
+            }
+        }
         relay.onWatchStateChange = { [weak store] isPaired, isInstalled in
             Task { @MainActor in
                 store?.updateWatchState(isPaired: isPaired, isInstalled: isInstalled)
             }
         }
-        store.onSessionAlertPreferencesChange = { [weak relay, weak iCloudReader, weak phoneAlertManager] preferences in
+        store.onSessionAlertPreferencesChange = { [weak relay, weak iCloudReader, weak phoneAlertManager, weak store] preferences in
             DevLog.trace(
                 "AlertTrace",
                 "TempoApp local preference change iPhone=\(preferences.iPhoneAlertsEnabled) watch=\(preferences.watchAlertsEnabled)"
             )
             phoneAlertManager?.syncAuthorization(enabledInPreferences: preferences.iPhoneAlertsEnabled)
             if let state = iCloudReader?.latestUsage {
-                relay?.send(state, history: iCloudReader?.historySnapshots ?? [], alertPreferences: preferences)
+                relay?.send(
+                    state,
+                    history: iCloudReader?.historySnapshots ?? [],
+                    alertPreferences: preferences,
+                    appearanceMode: store?.appearanceMode ?? .dark
+                )
             }
             do {
                 try AlertPreferencesSync.write(preferences)
@@ -104,6 +131,14 @@ final class AppCoordinator {
         iCloudReader.restart()
         store.refreshStaleness()
     }
+
+    private func refreshWidgetAppearance(_ appearanceMode: AppearanceMode) {
+        guard let snapshot = TempoWidgetSnapshotStore.read(platform: .iOS) else { return }
+        let refreshedSnapshot = WidgetUsageSnapshot(snapshot: snapshot, appearanceMode: appearanceMode)
+        if TempoWidgetSnapshotStore.write(refreshedSnapshot, platform: .iOS) {
+            TempoWidgetSnapshotStore.reloadTimelines(for: .iOS)
+        }
+    }
 }
 
 // MARK: - TempoApp
@@ -117,6 +152,7 @@ struct TempoApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(store: coordinator.store, widgetRoute: widgetRoute)
+                .applyClaudeAppearance(coordinator.store.appearanceMode)
                 .task {
                     DevLog.trace("AlertTrace", "TempoApp ContentView task scenePhase=\(String(describing: scenePhase))")
                     if scenePhase == .active {

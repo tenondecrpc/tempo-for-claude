@@ -27,9 +27,11 @@ final class iCloudUsageReader: NSObject {
     var onUsageState: ((UsageState) -> Void)?
     var onSessionInfo: ((SessionInfo) -> Void)?
     var onAlertPreferences: ((SessionAlertPreferences) -> Void)?
+    var onAppearanceMode: ((AppearanceMode) -> Void)?
 
     private var query: NSMetadataQuery?
     private var latestAlertPreferences: SessionAlertPreferences?
+    private var latestAppearanceMode: AppearanceMode?
 
     private static func debugPrint(_ message: @autoclosure () -> String) {
         _ = message
@@ -58,7 +60,9 @@ final class iCloudUsageReader: NSObject {
         #else
         let q = NSMetadataQuery()
         q.predicate = NSPredicate(
-            format: "%K IN %@", NSMetadataItemFSNameKey, ["usage.json", "usage-history.json", "latest.json", AlertPreferencesSync.fileName]
+            format: "%K IN %@",
+            NSMetadataItemFSNameKey,
+            ["usage.json", "usage-history.json", "latest.json", AlertPreferencesSync.fileName, AppearanceModeSync.fileName]
         )
         let documentsScope = Self.iCloudDocumentsScope()
         q.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
@@ -169,6 +173,11 @@ final class iCloudUsageReader: NSObject {
             DevLog.trace("AlertTrace", "iCloudUsageReader bootstrap found alert preferences file path=\(alertPreferencesURL.path)")
             readAlertPreferencesFile(at: alertPreferencesURL)
         }
+
+        let appearanceModeURL = trackerDirectory.appendingPathComponent(AppearanceModeSync.fileName)
+        if FileManager.default.fileExists(atPath: appearanceModeURL.path) {
+            readAppearanceModeFile(at: appearanceModeURL)
+        }
     }
 
     // MARK: - Query Callbacks
@@ -203,6 +212,7 @@ final class iCloudUsageReader: NSObject {
                 || fileName == "usage-history.json"
                 || fileName == "latest.json"
                 || fileName == AlertPreferencesSync.fileName
+                || fileName == AppearanceModeSync.fileName
             else { continue }
             Self.debugPrint("iCloudUsageReader metadata item name=\(fileName) path=\(url.path)")
             DevLog.trace("AlertTrace", "iCloudUsageReader saw metadata item name=\(fileName) path=\(url.path)")
@@ -214,8 +224,10 @@ final class iCloudUsageReader: NSObject {
                 readHistoryFile(at: url)
             } else if fileName == "latest.json" {
                 readSessionFile(at: url)
-            } else {
+            } else if fileName == AlertPreferencesSync.fileName {
                 readAlertPreferencesFile(at: url)
+            } else {
+                readAppearanceModeFile(at: url)
             }
         }
 
@@ -355,6 +367,22 @@ final class iCloudUsageReader: NSObject {
             case .failure(let error):
                 Self.debugPrint("iCloudUsageReader failed alert-preferences.json decode error=\(error.localizedDescription)")
                 DevLog.trace("AlertTrace", "iCloudUsageReader failed to decode alert preferences path=\(url.path) error=\(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func readAppearanceModeFile(at url: URL) {
+        Task { [weak self] in
+            let result: Result<AppearanceMode, Error> = Self.decodeFile(at: url, as: AppearanceMode.self)
+
+            guard let self else { return }
+            switch result {
+            case .success(let appearanceMode):
+                guard self.latestAppearanceMode != appearanceMode else { return }
+                self.latestAppearanceMode = appearanceMode
+                self.onAppearanceMode?(appearanceMode)
+            case .failure:
+                return
             }
         }
     }

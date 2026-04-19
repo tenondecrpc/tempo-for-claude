@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 @Observable
 @MainActor
@@ -17,6 +18,11 @@ final class IOSAppStore {
     }
     var use24HourTime: Bool {
         didSet { defaults.set(use24HourTime, forKey: Keys.use24HourTime) }
+    }
+    var appearanceMode: AppearanceMode {
+        didSet {
+            defaults.set(appearanceMode.rawValue, forKey: Keys.appearanceMode)
+        }
     }
     var iPhoneAlertsEnabled: Bool {
         didSet {
@@ -90,9 +96,12 @@ final class IOSAppStore {
         static let showSessionSeries = "ios.showSessionSeries"
         static let showWeeklySeries = "ios.showWeeklySeries"
         static let use24HourTime = "ios.use24HourTime"
+        static let appearanceMode = "ios.appearanceMode"
         static let iPhoneAlertsEnabled = "ios.iPhoneAlertsEnabled"
         static let watchAlertsEnabled = "ios.watchAlertsEnabled"
     }
+
+    var preferredColorScheme: ColorScheme? { appearanceMode.colorScheme }
 
     var sessionAlertPreferences: SessionAlertPreferences {
         SessionAlertPreferences(
@@ -128,6 +137,13 @@ final class IOSAppStore {
             use24HourTime = false
         } else {
             use24HourTime = defaults.bool(forKey: Keys.use24HourTime)
+        }
+
+        if let rawAppearanceMode = defaults.string(forKey: Keys.appearanceMode),
+           let parsedAppearanceMode = AppearanceMode(rawValue: rawAppearanceMode) {
+            appearanceMode = parsedAppearanceMode
+        } else {
+            appearanceMode = .dark
         }
 
         if defaults.object(forKey: Keys.iPhoneAlertsEnabled) == nil {
@@ -166,6 +182,12 @@ final class IOSAppStore {
         isApplyingSyncedAlertPreferences = false
 
         onSessionAlertPreferencesChange?(sessionAlertPreferences)
+    }
+
+    func applySyncedAppearanceMode(_ appearanceMode: AppearanceMode) {
+        guard self.appearanceMode != appearanceMode else { return }
+
+        self.appearanceMode = appearanceMode
     }
 
     private static func map(_ freshness: ICloudDataFreshness) -> iCloudUsageReader.SyncStatus {

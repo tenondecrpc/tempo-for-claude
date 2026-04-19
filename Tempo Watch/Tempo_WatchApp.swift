@@ -49,6 +49,7 @@ struct Tempo_WatchApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .applyClaudeAppearance(coordinator.store.appearanceMode)
                 .environment(coordinator.store)
                 .task {
                     coordinator.onScenePhaseChange(scenePhase)
