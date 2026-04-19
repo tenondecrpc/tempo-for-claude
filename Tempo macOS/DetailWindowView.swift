@@ -70,7 +70,6 @@ struct DetailWindowView: View {
         }
         .background(ClaudeCodeTheme.background)
         .background(StatsWindowAccessor(window: $hostingWindow))
-        .preferredColorScheme(coordinator.settings.preferredColorScheme)
         .onChange(of: hostingWindow, initial: true) { _, window in
             activateWindowIfNeeded(window)
         }
@@ -183,9 +182,11 @@ struct DetailWindowView: View {
 
     // Session card
     private func sessionCard(usage: UsageState, now: Date) -> some View {
-        HStack(spacing: 0) {
+        let sessionColor = UtilizationSeverity(utilization: usage.utilization5h).usageColor(normal: ClaudeCodeTheme.Usage.session)
+
+        return HStack(spacing: 0) {
             Rectangle()
-                .fill(ClaudeCodeTheme.accent)
+                .fill(sessionColor)
                 .frame(width: 4)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -198,7 +199,7 @@ struct DetailWindowView: View {
                 }
                 Text("\(Int(usage.utilization5h * 100))%")
                     .font(.title3.bold().monospacedDigit())
-                    .foregroundStyle(ClaudeCodeTheme.textPrimary)
+                    .foregroundStyle(sessionColor)
                 Text(TimeFormatPolicy.sessionResetString(
                     resetAt: usage.resetAt5h,
                     now: now,
@@ -220,9 +221,11 @@ struct DetailWindowView: View {
 
     // Weekly card
     private func weeklyCard(usage: UsageState) -> some View {
-        HStack(spacing: 0) {
+        let weeklyColor = UtilizationSeverity(utilization: usage.utilization7d).usageColor(normal: ClaudeCodeTheme.Usage.weekly)
+
+        return HStack(spacing: 0) {
             Rectangle()
-                .fill(ClaudeCodeTheme.info)
+                .fill(weeklyColor)
                 .frame(width: 4)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -235,7 +238,7 @@ struct DetailWindowView: View {
                 }
                 Text("\(Int(usage.utilization7d * 100))%")
                     .font(.title3.bold().monospacedDigit())
-                    .foregroundStyle(ClaudeCodeTheme.textPrimary)
+                    .foregroundStyle(weeklyColor)
                 Text(TimeFormatPolicy.weeklyResetString(
                     resetAt: usage.resetAt7d,
                     use24HourTime: chartUse24HourTime
@@ -1572,7 +1575,7 @@ struct ActivityHeatmapView: View {
                                 let intensity = Double(count) / Double(mx)
                                 RoundedRectangle(cornerRadius: 2)
                                     .fill(count == 0
-                                        ? Color.white.opacity(0.05)
+                                        ? ClaudeCodeTheme.ringTrackInner
                                         : ClaudeCodeTheme.accent.opacity(0.3 + intensity * 0.7))
                                     .frame(width: cellSize, height: cellSize)
                             }
@@ -1676,27 +1679,31 @@ private struct StatsShareCardView: View {
     }
 
     var body: some View {
+        let sessionColor = ClaudeCodeTheme.Usage.session
+        let weeklyColor = ClaudeCodeTheme.Usage.weekly
+        let extraUsageColor = ClaudeCodeTheme.Usage.critical
+
         ZStack {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(Color(red: 0.08, green: 0.09, blue: 0.12))
+                .fill(ClaudeCodeTheme.background)
 
             VStack(alignment: .leading, spacing: 22) {
                 HStack {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Tempo for Claude")
                             .font(.system(size: 40, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(ClaudeCodeTheme.textPrimary)
                     }
                     Spacer()
                     Text(rangeLabel)
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.78))
+                        .foregroundStyle(ClaudeCodeTheme.textSecondary)
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text(timeRangeLabel)
                         .font(.system(size: 28, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(ClaudeCodeTheme.textPrimary)
 
                     Chart {
                         ForEach(sessionExtraUsageWindows) { window in
@@ -1706,7 +1713,7 @@ private struct StatsShareCardView: View {
                                 yStart: .value("Extra Usage Min", 0),
                                 yEnd: .value("Extra Usage Max", 105)
                             )
-                            .foregroundStyle(Color(red: 0.486, green: 0.302, blue: 0.929).opacity(0.10))
+                            .foregroundStyle(extraUsageColor.opacity(0.08))
                         }
 
                         ForEach(weeklyExtraUsageWindows) { window in
@@ -1716,11 +1723,11 @@ private struct StatsShareCardView: View {
                                 yStart: .value("Weekly Extra Usage Min", 0),
                                 yEnd: .value("Weekly Extra Usage Max", 105)
                             )
-                            .foregroundStyle(Color(red: 0.937, green: 0.325, blue: 0.388).opacity(0.07))
+                            .foregroundStyle(extraUsageColor.opacity(0.07))
                         }
 
                         RuleMark(y: .value("Warning", 80))
-                            .foregroundStyle(Color(red: 0.937, green: 0.325, blue: 0.388).opacity(0.45))
+                            .foregroundStyle(ClaudeCodeTheme.Usage.warning.opacity(0.45))
                             .lineStyle(StrokeStyle(lineWidth: 2, dash: [8, 6]))
 
                         ForEach(snapshots) { snap in
@@ -1733,8 +1740,8 @@ private struct StatsShareCardView: View {
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [
-                                        Color(red: 0.937, green: 0.325, blue: 0.388).opacity(0.16),
-                                        Color(red: 0.937, green: 0.325, blue: 0.388).opacity(0.02)
+                                        weeklyColor.opacity(0.16),
+                                        weeklyColor.opacity(0.02)
                                     ],
                                     startPoint: .top,
                                     endPoint: .bottom
@@ -1744,6 +1751,7 @@ private struct StatsShareCardView: View {
 
                         ForEach(Array(sessionSegments.enumerated()), id: \.offset) { segmentIndex, segment in
                             let sessionSeriesKey = "session-\(segmentIndex)"
+                            let segmentColor = segment.isUsingExtraUsage ? extraUsageColor : sessionColor
                             ForEach(segment.snapshots) { snap in
                                 AreaMark(
                                     x: .value("Time", snap.date),
@@ -1755,8 +1763,8 @@ private struct StatsShareCardView: View {
                                 .foregroundStyle(
                                     LinearGradient(
                                         colors: [
-                                            Color(red: 0.302, green: 0.600, blue: 0.878).opacity(segment.isUsingExtraUsage ? 0.22 : 0.34),
-                                            Color(red: 0.302, green: 0.600, blue: 0.878).opacity(segment.isUsingExtraUsage ? 0.04 : 0.08)
+                                            segmentColor.opacity(segment.isUsingExtraUsage ? 0.22 : 0.34),
+                                            segmentColor.opacity(segment.isUsingExtraUsage ? 0.04 : 0.08)
                                         ],
                                         startPoint: .top,
                                         endPoint: .bottom
@@ -1768,7 +1776,7 @@ private struct StatsShareCardView: View {
                                     y: .value("Session", snap.utilization5h * 100),
                                     series: .value("Series", sessionSeriesKey)
                                 )
-                                .foregroundStyle(Color(red: 0.302, green: 0.600, blue: 0.878))
+                                .foregroundStyle(segmentColor)
                                 .lineStyle(
                                     StrokeStyle(
                                         lineWidth: segment.isUsingExtraUsage ? 4.5 : 4,
@@ -1784,7 +1792,7 @@ private struct StatsShareCardView: View {
                                 x: .value("Time", snap.date),
                                 y: .value("Weekly", snap.utilization7d * 100)
                             )
-                            .foregroundStyle(Color(red: 0.937, green: 0.325, blue: 0.388))
+                            .foregroundStyle(weeklyColor)
                             .lineStyle(StrokeStyle(lineWidth: 4))
                             .interpolationMethod(.catmullRom)
                         }
@@ -1798,7 +1806,7 @@ private struct StatsShareCardView: View {
                                         y: .value("Weekly Extra Usage", snap.utilization7d * 100),
                                         series: .value("Series", weeklySeriesKey)
                                     )
-                                    .foregroundStyle(Color(red: 0.937, green: 0.325, blue: 0.388))
+                                    .foregroundStyle(extraUsageColor)
                                     .lineStyle(StrokeStyle(lineWidth: 4.5, dash: [10, 6]))
                                     .interpolationMethod(.catmullRom)
                                 }
@@ -1811,19 +1819,19 @@ private struct StatsShareCardView: View {
                     .chartXAxis {
                         AxisMarks(values: .automatic) { _ in
                             AxisGridLine()
-                                .foregroundStyle(Color.white.opacity(0.12))
+                                .foregroundStyle(ClaudeCodeTheme.ringTrack)
                             AxisValueLabel()
-                                .foregroundStyle(Color.white.opacity(0.58))
+                                .foregroundStyle(ClaudeCodeTheme.textSecondary)
                         }
                     }
                     .chartYAxis {
                         AxisMarks(values: [0, 25, 50, 75, 100]) { value in
                             AxisGridLine()
-                                .foregroundStyle(Color.white.opacity(0.12))
+                                .foregroundStyle(ClaudeCodeTheme.ringTrack)
                             AxisValueLabel {
                                 if let value = value.as(Double.self) {
                                     Text("\(Int(value))%")
-                                        .foregroundStyle(Color.white.opacity(0.58))
+                                        .foregroundStyle(ClaudeCodeTheme.textSecondary)
                                 }
                             }
                         }
@@ -1831,18 +1839,18 @@ private struct StatsShareCardView: View {
                     .frame(height: 320)
 
                     HStack(spacing: 26) {
-                        legendItem(color: Color(red: 0.302, green: 0.600, blue: 0.878), title: "Session")
+                        legendItem(color: sessionColor, title: "Session")
                         if snapshots.contains(where: { $0.isUsingExtraUsage }) {
-                            legendItem(color: Color(red: 0.302, green: 0.600, blue: 0.878), title: "Extra Usage", dashed: true)
+                            legendItem(color: extraUsageColor, title: "Extra Usage", dashed: true)
                         }
-                        legendItem(color: Color(red: 0.937, green: 0.325, blue: 0.388), title: "Weekly")
+                        legendItem(color: weeklyColor, title: "Weekly")
                     }
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 20)
                 .background(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.white.opacity(0.04))
+                        .fill(ClaudeCodeTheme.surface)
                 )
 
                 HStack(spacing: 16) {
@@ -1855,17 +1863,17 @@ private struct StatsShareCardView: View {
                 HStack {
                     Text("Tempo for Claude")
                         .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(ClaudeCodeTheme.background)
                     Spacer()
                     Text(Self.exportDateFormatter.string(from: exportedAt))
                         .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.82))
+                        .foregroundStyle(ClaudeCodeTheme.background.opacity(0.82))
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 16)
                 .background(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color(red: 0.486, green: 0.302, blue: 0.929))
+                        .fill(ClaudeCodeTheme.highlight)
                 )
             }
             .padding(28)
@@ -1985,7 +1993,7 @@ private struct StatsShareCardView: View {
             }
             Text(title)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.9))
+                .foregroundStyle(ClaudeCodeTheme.textPrimary)
         }
     }
 
@@ -2024,10 +2032,10 @@ private struct StatsShareCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.72))
+                .foregroundStyle(ClaudeCodeTheme.textSecondary)
             Text(value)
                 .font(.system(size: 34, weight: .bold))
-                .foregroundStyle(Color(red: 0.608, green: 0.463, blue: 0.976))
+                .foregroundStyle(ClaudeCodeTheme.highlight)
                 .monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2035,7 +2043,7 @@ private struct StatsShareCardView: View {
         .padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.04))
+                .fill(ClaudeCodeTheme.surface)
         )
     }
 }

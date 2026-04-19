@@ -38,6 +38,9 @@ struct DashboardTabView: View {
 
     @ViewBuilder
     private func dashboardContent(usage: UsageState, now: Date) -> some View {
+        let sessionColor = UtilizationSeverity(utilization: usage.utilization5h).usageColor(normal: ClaudeCodeTheme.Usage.session)
+        let weeklyColor = UtilizationSeverity(utilization: usage.utilization7d).usageColor(normal: ClaudeCodeTheme.Usage.weekly)
+
         if case .stale(let since) = store.usageSyncStatus {
             statusCard(
                 title: "Mac App Not Responding",
@@ -80,7 +83,7 @@ struct DashboardTabView: View {
                             now: now,
                             use24HourTime: store.use24HourTime
                         ),
-                        color: ClaudeCodeTheme.accent
+                        color: sessionColor
                     )
                     metricPill(
                         title: "7D",
@@ -89,7 +92,7 @@ struct DashboardTabView: View {
                             resetAt: usage.resetAt7d,
                             use24HourTime: store.use24HourTime
                         ),
-                        color: ClaudeCodeTheme.info
+                        color: weeklyColor
                     )
                 }
             }
@@ -209,7 +212,7 @@ struct DashboardTabView: View {
                 .foregroundStyle(color)
             Text(value)
                 .font(.title3.bold().monospacedDigit())
-                .foregroundStyle(ClaudeCodeTheme.textPrimary)
+                .foregroundStyle(color)
             Text(subtitle)
                 .font(.caption)
                 .foregroundStyle(ClaudeCodeTheme.textSecondary)
@@ -282,6 +285,9 @@ private struct UsageRingGauge: View {
     let weeklyProgress: Double
 
     var body: some View {
+        let sessionColor = UtilizationSeverity(utilization: sessionProgress).usageColor(normal: ClaudeCodeTheme.Usage.session)
+        let weeklyColor = UtilizationSeverity(utilization: weeklyProgress).usageColor(normal: ClaudeCodeTheme.Usage.weekly)
+
         ZStack {
             Circle()
                 .stroke(ClaudeCodeTheme.ringTrack, lineWidth: 14)
@@ -289,7 +295,7 @@ private struct UsageRingGauge: View {
             Circle()
                 .trim(from: 0, to: min(max(sessionProgress, 0), 1))
                 .stroke(
-                    ClaudeCodeTheme.accent,
+                    sessionColor,
                     style: StrokeStyle(lineWidth: 14, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
@@ -301,7 +307,7 @@ private struct UsageRingGauge: View {
             Circle()
                 .trim(from: 0, to: min(max(weeklyProgress, 0), 1))
                 .stroke(
-                    ClaudeCodeTheme.info,
+                    weeklyColor,
                     style: StrokeStyle(lineWidth: 8, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
@@ -310,7 +316,7 @@ private struct UsageRingGauge: View {
             VStack(spacing: 2) {
                 Text("\(Int((sessionProgress * 100).rounded()))%")
                     .font(.title.bold().monospacedDigit())
-                    .foregroundStyle(ClaudeCodeTheme.textPrimary)
+                    .foregroundStyle(sessionColor)
                 Text("Session")
                     .font(.caption)
                     .foregroundStyle(ClaudeCodeTheme.textSecondary)

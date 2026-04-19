@@ -14,7 +14,7 @@ struct ContentView: View {
                     Text("\(Int(store.usageState.utilization5h * 100))%")
                         .font(.system(.title, design: .rounded))
                         .fontWeight(.semibold)
-                        .foregroundStyle(ringColor(utilization: store.usageState.utilization5h))
+                        .foregroundStyle(sessionColor(utilization: store.usageState.utilization5h))
 
                     // Countdown - secondary context below percentage
                     Text(formatCountdown(to: store.usageState.resetAt5h))
@@ -57,7 +57,7 @@ struct ContentView: View {
             Circle()
                 .trim(from: 0, to: store.usageState.utilization5h)
                 .stroke(
-                    ringColor(utilization: store.usageState.utilization5h),
+                    sessionColor(utilization: store.usageState.utilization5h),
                     style: StrokeStyle(lineWidth: 7, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
@@ -68,7 +68,7 @@ struct ContentView: View {
             Circle()
                 .trim(from: 0, to: store.usageState.utilization7d)
                 .stroke(
-                    ClaudeCodeTheme.highlight,
+                    weeklyColor(utilization: store.usageState.utilization7d),
                     style: StrokeStyle(lineWidth: 4, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
@@ -77,12 +77,12 @@ struct ContentView: View {
         }
     }
 
-    private func ringColor(utilization: Double) -> Color {
-        switch utilization {
-        case ..<0.6: return ClaudeCodeTheme.success
-        case ..<0.85: return ClaudeCodeTheme.warning
-        default: return ClaudeCodeTheme.error
-        }
+    private func sessionColor(utilization: Double) -> Color {
+        UtilizationSeverity(utilization: utilization).usageColor(normal: ClaudeCodeTheme.Usage.watchSession)
+    }
+
+    private func weeklyColor(utilization: Double) -> Color {
+        UtilizationSeverity(utilization: utilization).usageColor(normal: ClaudeCodeTheme.Usage.watchWeekly)
     }
 
     private func formatCountdown(to date: Date) -> String {

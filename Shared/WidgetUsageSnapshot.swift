@@ -58,9 +58,14 @@ struct WidgetUsageSnapshot: Codable, Equatable {
     let extraUsageUsedAmountUSD: Double?
     let extraUsageLimitAmountUSD: Double?
     let extraUsageUtilizationPercent: Double?
+    let appearanceModeRawValue: String?
 
-    init(usage: UsageState, updatedAt: Date) {
-        schemaVersion = 1
+    var appearanceMode: AppearanceMode {
+        appearanceModeRawValue.flatMap(AppearanceMode.init(rawValue:)) ?? .dark
+    }
+
+    init(usage: UsageState, updatedAt: Date, appearanceMode: AppearanceMode = .dark) {
+        schemaVersion = 2
         self.updatedAt = updatedAt
         utilization5h = usage.utilization5h
         utilization7d = usage.utilization7d
@@ -72,6 +77,23 @@ struct WidgetUsageSnapshot: Codable, Equatable {
         extraUsageUsedAmountUSD = usage.extraUsage?.usedCreditsAmount
         extraUsageLimitAmountUSD = usage.extraUsage?.monthlyLimitAmount
         extraUsageUtilizationPercent = usage.extraUsage?.utilization
+        appearanceModeRawValue = appearanceMode.rawValue
+    }
+
+    init(snapshot: WidgetUsageSnapshot, appearanceMode: AppearanceMode) {
+        schemaVersion = max(snapshot.schemaVersion, 2)
+        updatedAt = snapshot.updatedAt
+        utilization5h = snapshot.utilization5h
+        utilization7d = snapshot.utilization7d
+        resetAt5h = snapshot.resetAt5h
+        resetAt7d = snapshot.resetAt7d
+        isMocked = snapshot.isMocked
+        isDoubleLimitPromoActive = snapshot.isDoubleLimitPromoActive
+        extraUsageEnabled = snapshot.extraUsageEnabled
+        extraUsageUsedAmountUSD = snapshot.extraUsageUsedAmountUSD
+        extraUsageLimitAmountUSD = snapshot.extraUsageLimitAmountUSD
+        extraUsageUtilizationPercent = snapshot.extraUsageUtilizationPercent
+        appearanceModeRawValue = appearanceMode.rawValue
     }
 
     var hasExtraUsageSummary: Bool {

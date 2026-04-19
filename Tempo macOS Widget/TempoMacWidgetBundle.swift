@@ -56,6 +56,7 @@ private struct TempoMacRingWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: TempoWidgetKind.macOSRing, provider: TempoMacProvider()) { entry in
             TempoMacRingWidgetView(entry: entry)
+                .applyClaudeAppearance(entry.snapshot?.appearanceMode ?? .dark)
         }
         .configurationDisplayName("Tempo Ring")
         .description("Current session usage in a compact desktop ring.")
@@ -68,6 +69,7 @@ private struct TempoMacSummaryWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: TempoWidgetKind.macOSSummary, provider: TempoMacProvider()) { entry in
             TempoMacSummaryWidgetView(entry: entry)
+                .applyClaudeAppearance(entry.snapshot?.appearanceMode ?? .dark)
         }
         .configurationDisplayName("Tempo Summary")
         .description("A wide desktop summary of current and weekly usage.")
@@ -80,6 +82,7 @@ private struct TempoMacCompactWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: TempoWidgetKind.macOSCompact, provider: TempoMacProvider()) { entry in
             TempoMacCompactWidgetView(entry: entry)
+                .applyClaudeAppearance(entry.snapshot?.appearanceMode ?? .dark)
         }
         .configurationDisplayName("Tempo Compact")
         .description("Dense usage metrics for the desktop.")
@@ -118,13 +121,16 @@ private struct TempoMacSummaryWidgetView: View {
 
     @ViewBuilder
     private func summaryContent(snapshot: WidgetUsageSnapshot, isCompact: Bool) -> some View {
+        let sessionColor = UtilizationSeverity(utilization: snapshot.utilization5h).usageColor(normal: ClaudeCodeTheme.Usage.session)
+        let weeklyColor = UtilizationSeverity(utilization: snapshot.utilization7d).usageColor(normal: ClaudeCodeTheme.Usage.weekly)
+
         VStack(alignment: .leading, spacing: isCompact ? 8 : 10) {
             TempoMacMetricRow(
                 title: "Current Session",
                 value: TempoWidgetFormatting.percentString(snapshot.utilization5h),
                 subtitle: TempoWidgetFormatting.sessionResetString(snapshot),
                 progress: snapshot.utilization5h,
-                color: ClaudeCodeTheme.accent,
+                color: sessionColor,
                 valueFontSize: isCompact ? 10 : 11,
                 barHeight: isCompact ? 7 : 8,
                 verticalSpacing: isCompact ? 2 : 3
@@ -135,7 +141,7 @@ private struct TempoMacSummaryWidgetView: View {
                 value: TempoWidgetFormatting.percentString(snapshot.utilization7d),
                 subtitle: TempoWidgetFormatting.weeklyResetString(snapshot),
                 progress: snapshot.utilization7d,
-                color: ClaudeCodeTheme.info,
+                color: weeklyColor,
                 valueFontSize: isCompact ? 10 : 11,
                 barHeight: isCompact ? 7 : 8,
                 verticalSpacing: isCompact ? 2 : 3
@@ -155,12 +161,15 @@ private struct TempoMacCompactWidgetView: View {
 
     var body: some View {
         TempoMacWidgetChrome(snapshot: entry.snapshot, route: .stats, emptySubtitle: "Waiting for poll data", isPreview: entry.isPreview) { snapshot in
+            let sessionColor = UtilizationSeverity(utilization: snapshot.utilization5h).usageColor(normal: ClaudeCodeTheme.Usage.session)
+            let weeklyColor = UtilizationSeverity(utilization: snapshot.utilization7d).usageColor(normal: ClaudeCodeTheme.Usage.weekly)
+
             VStack(alignment: .leading, spacing: 0) {
                 TempoMacSuperscriptMetric(
                     value: TempoWidgetFormatting.percentValue(snapshot.utilization5h),
                     label: "Current",
                     subtitle: TempoWidgetFormatting.sessionResetString(snapshot),
-                    color: ClaudeCodeTheme.accent
+                    color: sessionColor
                 )
 
                 Spacer(minLength: 0)
@@ -169,7 +178,7 @@ private struct TempoMacCompactWidgetView: View {
                     value: TempoWidgetFormatting.percentValue(snapshot.utilization7d),
                     label: "Weekly",
                     subtitle: TempoWidgetFormatting.weeklyResetString(snapshot),
-                    color: ClaudeCodeTheme.info
+                    color: weeklyColor
                 )
             }
         }
@@ -465,13 +474,16 @@ private struct TempoMacDualRing: View {
     let weeklyProgress: Double
 
     var body: some View {
+        let weeklyColor = UtilizationSeverity(utilization: weeklyProgress).usageColor(normal: ClaudeCodeTheme.Usage.weekly)
+        let sessionColor = UtilizationSeverity(utilization: sessionProgress).usageColor(normal: ClaudeCodeTheme.Usage.sessionEmphasis)
+
         ZStack {
             Circle()
                 .stroke(ClaudeCodeTheme.ringTrack.opacity(0.7), lineWidth: 13)
 
             Circle()
                 .trim(from: 0, to: max(0, min(weeklyProgress, 1)))
-                .stroke(ClaudeCodeTheme.info.opacity(0.9), style: StrokeStyle(lineWidth: 13, lineCap: .round))
+                .stroke(weeklyColor.opacity(0.9), style: StrokeStyle(lineWidth: 13, lineCap: .round))
                 .rotationEffect(.degrees(-90))
 
             Circle()
@@ -480,14 +492,14 @@ private struct TempoMacDualRing: View {
 
             Circle()
                 .trim(from: 0, to: max(0, min(sessionProgress, 1)))
-                .stroke(ClaudeCodeTheme.accentLight, style: StrokeStyle(lineWidth: 13, lineCap: .round))
+                .stroke(sessionColor, style: StrokeStyle(lineWidth: 13, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .padding(22)
 
             VStack(spacing: 1) {
                 Text(TempoWidgetFormatting.percentString(sessionProgress))
                     .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundStyle(ClaudeCodeTheme.textPrimary)
+                    .foregroundStyle(sessionColor)
                 Text("session")
                     .font(.system(size: 10, weight: .medium, design: .rounded))
                     .foregroundStyle(ClaudeCodeTheme.textSecondary)

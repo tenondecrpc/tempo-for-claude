@@ -1,36 +1,52 @@
 import WidgetKit
 import SwiftUI
 
-// MARK: - App Group ID
-
-private let appGroupID = "group.com.tenondecrpc.tempo.watch"
-private let utilizationKey = "complication_utilization5h"
-
 // MARK: - Timeline Entry
 
 struct UsageEntry: TimelineEntry {
     let date: Date
     let utilization: Double
+    let appearanceMode: AppearanceMode
 }
 
 // MARK: - Provider
 
 struct UsageProvider: TimelineProvider {
     func placeholder(in context: Context) -> UsageEntry {
-        UsageEntry(date: Date(), utilization: 0.42)
+        UsageEntry(date: Date(), utilization: 0.42, appearanceMode: .dark)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (UsageEntry) -> Void) {
-        completion(UsageEntry(date: Date(), utilization: readUtilization()))
+        completion(
+            UsageEntry(
+                date: Date(),
+                utilization: readUtilization(),
+                appearanceMode: readAppearanceMode()
+            )
+        )
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<UsageEntry>) -> Void) {
-        let entry = UsageEntry(date: Date(), utilization: readUtilization())
+        let entry = UsageEntry(
+            date: Date(),
+            utilization: readUtilization(),
+            appearanceMode: readAppearanceMode()
+        )
         completion(Timeline(entries: [entry], policy: .never))
     }
 
     private func readUtilization() -> Double {
-        UserDefaults(suiteName: appGroupID)?.double(forKey: utilizationKey) ?? 0
+        UserDefaults(suiteName: TempoWatchShared.appGroupIdentifier)?
+            .double(forKey: TempoWatchShared.complicationUtilization5hKey) ?? 0
+    }
+
+    private func readAppearanceMode() -> AppearanceMode {
+        if let rawAppearanceMode = UserDefaults(suiteName: TempoWatchShared.appGroupIdentifier)?
+            .string(forKey: TempoWatchShared.appearanceModeKey),
+           let appearanceMode = AppearanceMode(rawValue: rawAppearanceMode) {
+            return appearanceMode
+        }
+        return .dark
     }
 }
 
@@ -53,11 +69,7 @@ struct UsageGaugeWidgetView: View {
     }
 
     private var gaugeColor: Color {
-        switch entry.utilization {
-        case ..<0.6:  return Color(red: 0.604, green: 0.792, blue: 0.525) // ClaudeCodeTheme.success dark
-        case ..<0.85: return Color(red: 0.910, green: 0.788, blue: 0.420) // ClaudeCodeTheme.warning dark
-        default:      return Color(red: 0.831, green: 0.459, blue: 0.388) // ClaudeCodeTheme.error dark
-        }
+        UtilizationSeverity(utilization: entry.utilization).usageColor(normal: ClaudeCodeTheme.Usage.watchSession)
     }
 }
 
@@ -70,6 +82,7 @@ struct UsageGaugeWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: UsageProvider()) { entry in
             UsageGaugeWidgetView(entry: entry)
+                .applyClaudeAppearance(entry.appearanceMode)
         }
         .configurationDisplayName("Claude Usage")
         .description("Shows your current Claude usage at a glance.")

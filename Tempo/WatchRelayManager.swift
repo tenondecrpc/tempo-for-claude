@@ -7,6 +7,7 @@ final class WatchRelayManager: NSObject {
     private struct PendingSessionTransfer {
         let sessionInfo: SessionInfo
         let alertPreferences: SessionAlertPreferences
+        let appearanceMode: AppearanceMode
     }
 
     private enum DefaultsKey {
@@ -19,6 +20,7 @@ final class WatchRelayManager: NSObject {
     private var pendingState: UsageState?
     private var pendingHistory: [UsageHistorySnapshot] = []
     private var pendingAlertPreferences: SessionAlertPreferences = .default
+    private var pendingAppearanceMode: AppearanceMode?
     private var pendingSessions: [PendingSessionTransfer] = []
     private var hasRequestedActivation = false
     private var hasLoggedMissingWatchApp = false
@@ -49,13 +51,15 @@ final class WatchRelayManager: NSObject {
     func send(
         _ state: UsageState,
         history: [UsageHistorySnapshot] = [],
-        alertPreferences: SessionAlertPreferences = .default
+        alertPreferences: SessionAlertPreferences = .default,
+        appearanceMode: AppearanceMode = .dark
     ) {
         ensureDelegate()
         guard session.activationState == .activated else {
             pendingState = state
             pendingHistory = history
             pendingAlertPreferences = alertPreferences
+            pendingAppearanceMode = appearanceMode
             activate()
             return
         }
@@ -67,6 +71,7 @@ final class WatchRelayManager: NSObject {
             pendingState = state
             pendingHistory = history
             pendingAlertPreferences = alertPreferences
+            pendingAppearanceMode = appearanceMode
             return
         }
 
@@ -74,9 +79,16 @@ final class WatchRelayManager: NSObject {
             pendingState = state
             pendingHistory = history
             pendingAlertPreferences = alertPreferences
+            pendingAppearanceMode = appearanceMode
             // Fallback path: some setups report watchInstalled=false while the watch app is running.
             // Queue a background transfer so the watch can still receive the latest state.
-            enqueueLatestUsagePayload(state.toUserInfo(history: history, alertPreferences: alertPreferences))
+            enqueueLatestUsagePayload(
+                state.toUserInfo(
+                    history: history,
+                    alertPreferences: alertPreferences,
+                    appearanceMode: appearanceMode
+                )
+            )
             if !hasLoggedMissingWatchApp {
                 hasLoggedMissingWatchApp = true
             }
@@ -85,7 +97,11 @@ final class WatchRelayManager: NSObject {
 
         hasLoggedMissingWatchApp = false
 
-        let payload = state.toUserInfo(history: history, alertPreferences: alertPreferences)
+        let payload = state.toUserInfo(
+            history: history,
+            alertPreferences: alertPreferences,
+            appearanceMode: appearanceMode
+        )
         do {
             try session.updateApplicationContext(payload)
         } catch {
@@ -106,31 +122,76 @@ final class WatchRelayManager: NSObject {
         let history = pendingHistory
         pendingHistory = []
         let alertPreferences = pendingAlertPreferences
-        send(state, history: history, alertPreferences: alertPreferences)
+        let appearanceMode = pendingAppearanceMode ?? .dark
+        send(
+            state,
+            history: history,
+            alertPreferences: alertPreferences,
+            appearanceMode: appearanceMode
+        )
+    }
+
+    func sendAppearanceMode(_ appearanceMode: AppearanceMode) {
+        ensureDelegate()
+        guard session.activationState == .activated else {
+            pendingAppearanceMode = appearanceMode
+            activate()
+            return
+        }
+
+        guard session.isPaired, session.isWatchAppInstalled else {
+            pendingAppearanceMode = appearanceMode
+            return
+        }
+
+        session.transferUserInfo([
+            "type": "AppearanceMode",
+            "appearanceMode": appearanceMode.rawValue,
+        ])
+        pendingAppearanceMode = nil
+    }
+
+    private func flushPendingAppearanceModeIfPossible() {
+        guard let pendingAppearanceMode else { return }
+        sendAppearanceMode(pendingAppearanceMode)
     }
 
     // MARK: - Send SessionInfo
 
     func sendSession(
         _ sessionInfo: SessionInfo,
-        alertPreferences: SessionAlertPreferences = .default
+        alertPreferences: SessionAlertPreferences = .default,
+        appearanceMode: AppearanceMode = .dark
     ) {
         if lastRelayedSessionID == sessionInfo.sessionId {
             return
         }
         ensureDelegate()
         guard session.activationState == .activated else {
-            enqueuePendingSessionIfNeeded(sessionInfo, alertPreferences: alertPreferences)
+            enqueuePendingSessionIfNeeded(
+                sessionInfo,
+                alertPreferences: alertPreferences,
+                appearanceMode: appearanceMode
+            )
             activate()
             return
         }
 
         guard session.isPaired, session.isWatchAppInstalled else {
-            enqueuePendingSessionIfNeeded(sessionInfo, alertPreferences: alertPreferences)
+            enqueuePendingSessionIfNeeded(
+                sessionInfo,
+                alertPreferences: alertPreferences,
+                appearanceMode: appearanceMode
+            )
             return
         }
 
-        session.transferUserInfo(sessionInfo.toUserInfo(alertPreferences: alertPreferences))
+        session.transferUserInfo(
+            sessionInfo.toUserInfo(
+                alertPreferences: alertPreferences,
+                appearanceMode: appearanceMode
+            )
+        )
         lastRelayedSessionID = sessionInfo.sessionId
     }
 
@@ -142,18 +203,28 @@ final class WatchRelayManager: NSObject {
         let queued = pendingSessions
         pendingSessions.removeAll(keepingCapacity: true)
         queued.forEach {
-            session.transferUserInfo($0.sessionInfo.toUserInfo(alertPreferences: $0.alertPreferences))
+            session.transferUserInfo(
+                $0.sessionInfo.toUserInfo(
+                    alertPreferences: $0.alertPreferences,
+                    appearanceMode: $0.appearanceMode
+                )
+            )
             lastRelayedSessionID = $0.sessionInfo.sessionId
         }
     }
 
     private func enqueuePendingSessionIfNeeded(
         _ sessionInfo: SessionInfo,
-        alertPreferences: SessionAlertPreferences
+        alertPreferences: SessionAlertPreferences,
+        appearanceMode: AppearanceMode
     ) {
         guard pendingSessions.contains(where: { $0.sessionInfo.sessionId == sessionInfo.sessionId }) == false else { return }
         pendingSessions.append(
-            PendingSessionTransfer(sessionInfo: sessionInfo, alertPreferences: alertPreferences)
+            PendingSessionTransfer(
+                sessionInfo: sessionInfo,
+                alertPreferences: alertPreferences,
+                appearanceMode: appearanceMode
+            )
         )
     }
 
@@ -176,6 +247,7 @@ extension WatchRelayManager: WCSessionDelegate {
         onWatchStateChange?(session.isPaired, session.isWatchAppInstalled)
         // Activation complete; send latest pending state if we have one.
         flushPendingStateIfPossible()
+        flushPendingAppearanceModeIfPossible()
         flushPendingSessionsIfPossible()
     }
 
@@ -194,6 +266,7 @@ extension WatchRelayManager: WCSessionDelegate {
         }
         onWatchStateChange?(session.isPaired, session.isWatchAppInstalled)
         flushPendingStateIfPossible()
+        flushPendingAppearanceModeIfPossible()
         flushPendingSessionsIfPossible()
     }
 }
@@ -203,7 +276,8 @@ extension WatchRelayManager: WCSessionDelegate {
 extension UsageState {
     func toUserInfo(
         history: [UsageHistorySnapshot] = [],
-        alertPreferences: SessionAlertPreferences = .default
+        alertPreferences: SessionAlertPreferences = .default,
+        appearanceMode: AppearanceMode = .dark
     ) -> [String: Any] {
         var info: [String: Any] = [
             "type": "UsageState",
@@ -213,6 +287,7 @@ extension UsageState {
             "resetAt7d": resetAt7d.timeIntervalSince1970,
             "isMocked": isMocked,
             "watchAlertsEnabled": alertPreferences.watchAlertsEnabled,
+            "appearanceMode": appearanceMode.rawValue,
         ]
         // Include last 7 days of history snapshots for the watch trend view
         let recent = history.filter { $0.date >= Date().addingTimeInterval(-7 * 24 * 3600) }
@@ -224,7 +299,10 @@ extension UsageState {
 }
 
 extension SessionInfo {
-    func toUserInfo(alertPreferences: SessionAlertPreferences = .default) -> [String: Any] {
+    func toUserInfo(
+        alertPreferences: SessionAlertPreferences = .default,
+        appearanceMode: AppearanceMode = .dark
+    ) -> [String: Any] {
         [
             "type": "SessionInfo",
             "sessionId": sessionId,
@@ -234,6 +312,7 @@ extension SessionInfo {
             "durationSeconds": durationSeconds,
             "timestamp": timestamp.timeIntervalSince1970,
             "watchAlertsEnabled": alertPreferences.watchAlertsEnabled,
+            "appearanceMode": appearanceMode.rawValue,
         ]
     }
 }
