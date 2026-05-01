@@ -42,7 +42,7 @@ final class MacAuthState {
     }
 
     init() {
-        if ClaudeCodeKeychainReader.hasValidSession() {
+        if ClaudeCodeKeychainReader.hasRestorableSession() {
             isAuthenticated = true
             authSource = .cliSession
         } else if let credentials = CredentialStore.load(), CredentialStore.isValid(credentials) {
@@ -115,6 +115,11 @@ final class MacOSAPIClient {
 
     private enum API {
         static let betaHeader = "oauth-2025-04-20"
+    }
+
+    private enum TokenSource: String {
+        case cliSession
+        case webOAuth
     }
 
     let authState: MacAuthState
@@ -198,6 +203,7 @@ final class MacOSAPIClient {
         try CredentialStore.save(credentials)
         authState.isAuthenticated = true
         authState.authSource = .webOAuth
+        DevLog.trace("AuthTrace", "OAuth code exchange succeeded source=webOAuth expiresAt=\(tokens.expiresAt)")
         clearPendingOAuth()
     }
 
@@ -243,9 +249,18 @@ final class MacOSAPIClient {
     /// Checks for valid stored credentials and restores the session. Returns true if authenticated.
     func tryRestoreSession() async -> Bool {
         // Primary: CLI keychain tokens
-        if ClaudeCodeKeychainReader.hasValidSession() {
+        if let cliTokens = ClaudeCodeKeychainReader.loadTokens(), !cliTokens.accessToken.isEmpty {
             authState.isAuthenticated = true
             authState.authSource = .cliSession
+
+            if ClaudeCodeKeychainReader.isAccessTokenFresh(cliTokens) {
+                DevLog.trace("AuthTrace", "Restored authenticated state from fresh CLI session")
+            } else if cliTokens.refreshToken?.isEmpty == false {
+                DevLog.trace("AuthTrace", "Restored authenticated state from CLI session; access token will be validated before web OAuth fallback")
+            } else {
+                DevLog.trace("AuthTrace", "Restored authenticated state from CLI access token without refresh token; token will be validated before web OAuth fallback")
+            }
+
             return true
         }
 
@@ -254,6 +269,7 @@ final class MacOSAPIClient {
         if CredentialStore.isValid(credentials) {
             authState.isAuthenticated = true
             authState.authSource = .webOAuth
+            DevLog.trace("AuthTrace", "Restored authenticated state from valid web OAuth credentials expiresAt=\(credentials.expiresAt)")
             return true
         }
         // Token expired - try refresh
@@ -261,8 +277,10 @@ final class MacOSAPIClient {
             _ = try await refreshAccessToken()
             authState.isAuthenticated = true
             authState.authSource = .webOAuth
+            DevLog.trace("AuthTrace", "Restored authenticated state after refreshing web OAuth credentials")
             return true
         } catch {
+            DevLog.trace("AuthTrace", "Failed to restore authenticated state error=\(error.localizedDescription)")
             return false
         }
     }
@@ -271,6 +289,7 @@ final class MacOSAPIClient {
 
     func refreshAccessToken() async throws -> String {
         guard let credentials = CredentialStore.load(), !credentials.refreshToken.isEmpty else {
+            DevLog.trace("AuthTrace", "Cannot refresh web OAuth token because no refresh token is stored")
             signOut()
             throw MacAuthError.noToken
         }
@@ -289,128 +308,169 @@ final class MacOSAPIClient {
             struct ErrorBody: Decodable { let error: String? }
             let body = try? JSONDecoder().decode(ErrorBody.self, from: data)
             if body?.error == "invalid_grant" || statusCode == 401 {
+                DevLog.trace("AuthTrace", "Web OAuth refresh failed status=\(statusCode) error=\(body?.error ?? "unknown")")
                 signOut()
                 throw MacAuthError.refreshFailed
             }
         }
-        guard statusCode == 200 else { throw MacAuthError.httpError(statusCode) }
-        struct RefreshResponse: Decodable { let access_token: String; let expires_in: Int? }
+        guard statusCode == 200 else {
+            DevLog.trace("AuthTrace", "Web OAuth refresh failed status=\(statusCode)")
+            throw MacAuthError.httpError(statusCode)
+        }
+        struct RefreshResponse: Decodable {
+            let access_token: String
+            let refresh_token: String?
+            let expires_in: Int?
+        }
         let tokens = try JSONDecoder().decode(RefreshResponse.self, from: data)
         var updated = credentials
         updated.accessToken = tokens.access_token
+        if let refreshToken = tokens.refresh_token, !refreshToken.isEmpty {
+            updated.refreshToken = refreshToken
+        }
         updated.expiresAt = Date().addingTimeInterval(TimeInterval(tokens.expires_in ?? 3600))
         try? CredentialStore.save(updated)
+        DevLog.trace("AuthTrace", "Web OAuth refresh succeeded expiresAt=\(updated.expiresAt)")
         return tokens.access_token
     }
 
     // MARK: - Authenticated Requests
 
     func authenticatedRequest(for url: URL) async throws -> Data {
-        var accessToken: String?
-
-        // Primary: CLI keychain tokens
-        if let cliTokens = ClaudeCodeKeychainReader.loadTokens(),
-           !cliTokens.accessToken.isEmpty {
-            if let expiresAt = cliTokens.expiresAt {
-                let expiryDate = Date(timeIntervalSince1970: expiresAt / 1000.0)
-                if expiryDate <= Date().addingTimeInterval(60), let refreshToken = cliTokens.refreshToken {
-                    accessToken = try await refreshCLIToken(refreshToken)
-                } else {
-                    accessToken = cliTokens.accessToken
-                }
-            } else {
-                accessToken = cliTokens.accessToken
+        if let cliTokens = ClaudeCodeKeychainReader.loadTokens(), !cliTokens.accessToken.isEmpty {
+            do {
+                return try await authenticatedRequestWithCLITokens(cliTokens, for: url)
+            } catch MacAuthError.refreshFailed {
+                DevLog.trace("AuthTrace", "CLI token refresh failed; attempting web OAuth fallback")
+            } catch MacAuthError.noToken {
+                DevLog.trace("AuthTrace", "CLI token unavailable; attempting web OAuth fallback")
+            } catch MacAuthError.httpError(401) {
+                DevLog.trace("AuthTrace", "CLI token request returned 401; attempting web OAuth fallback")
+            } catch {
+                throw error
             }
         }
 
-        // Fallback: web OAuth credentials
-        if accessToken == nil || accessToken?.isEmpty == true {
-            if let credentials = CredentialStore.load(), !credentials.accessToken.isEmpty {
-                accessToken = credentials.accessToken
-
-                func makeRequest(token: String) async throws -> (Data, HTTPURLResponse) {
-                    var req = URLRequest(url: url)
-                    req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                    req.setValue(API.betaHeader, forHTTPHeaderField: "anthropic-beta")
-                    let (data, response) = try await URLSession.shared.data(for: req)
-                    return (data, response as! HTTPURLResponse)
-                }
-
-                let (data, http) = try await makeRequest(token: accessToken!)
-                if http.statusCode == 401 {
-                    accessToken = try await refreshAccessToken()
-                    return try await makeRequest(token: accessToken!).0
-                }
-                switch http.statusCode {
-                case 200: return data
-                case 429:
-                    let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
-                    throw MacAuthError.rateLimited(retryAfter: retryAfter)
-                default: throw MacAuthError.httpError(http.statusCode)
-                }
-            }
-        }
-
-        guard let token = accessToken, !token.isEmpty else {
+        guard let credentials = CredentialStore.load(), !credentials.accessToken.isEmpty else {
+            DevLog.trace("AuthTrace", "Authenticated request failed because no usable token source exists")
             throw MacAuthError.noToken
         }
 
-        func makeRequest(token: String) async throws -> (Data, HTTPURLResponse) {
-            var req = URLRequest(url: url)
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            req.setValue(API.betaHeader, forHTTPHeaderField: "anthropic-beta")
-            let (data, response) = try await URLSession.shared.data(for: req)
-            return (data, response as! HTTPURLResponse)
-        }
+        return try await authenticatedRequestWithWebCredentials(credentials, for: url)
+    }
 
-        let (data, http) = try await makeRequest(token: token)
-
-        if http.statusCode == 401 {
-            if let cliTokens = ClaudeCodeKeychainReader.loadTokens(),
-               let refreshToken = cliTokens.refreshToken {
-                accessToken = try await refreshCLIToken(refreshToken)
-            } else {
-                accessToken = try await refreshAccessToken()
-            }
-            return try await makeRequest(token: accessToken!).0
-        }
-
+    private func handleAuthenticatedResponse(
+        _ data: Data,
+        _ http: HTTPURLResponse,
+        source: TokenSource
+    ) throws -> Data {
         switch http.statusCode {
         case 200:
+            DevLog.trace("AuthTrace", "Authenticated request succeeded source=\(source.rawValue)")
             return data
+        case 401:
+            DevLog.trace("AuthTrace", "Authenticated request returned 401 source=\(source.rawValue)")
+            throw MacAuthError.httpError(401)
         case 429:
             let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
+            let retryAfterLabel = retryAfter.map { String($0) } ?? "nil"
+            DevLog.trace("AuthTrace", "Authenticated request rate limited source=\(source.rawValue) retryAfter=\(retryAfterLabel)")
             throw MacAuthError.rateLimited(retryAfter: retryAfter)
         default:
+            DevLog.trace("AuthTrace", "Authenticated request failed source=\(source.rawValue) status=\(http.statusCode)")
             throw MacAuthError.httpError(http.statusCode)
         }
     }
 
-    private func refreshCLIToken(_ refreshToken: String) async throws -> String {
+    private func makeAuthenticatedRequest(token: String, for url: URL) async throws -> (Data, HTTPURLResponse) {
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue(API.betaHeader, forHTTPHeaderField: "anthropic-beta")
+        let (data, response) = try await URLSession.shared.data(for: req)
+        return (data, response as! HTTPURLResponse)
+    }
+
+    private func authenticatedRequestWithCLITokens(
+        _ cliTokens: ClaudeCodeKeychainReader.CLITokens,
+        for url: URL
+    ) async throws -> Data {
+        if let expiresAt = cliTokens.expiresAt {
+            let expiryDate = Date(timeIntervalSince1970: expiresAt / 1000.0)
+            if expiryDate <= Date().addingTimeInterval(60) {
+                DevLog.trace("AuthTrace", "CLI access token appears expired; validating it before refresh")
+            }
+        }
+
+        do {
+            let (data, http) = try await makeAuthenticatedRequest(token: cliTokens.accessToken, for: url)
+            return try handleAuthenticatedResponse(data, http, source: .cliSession)
+        } catch MacAuthError.httpError(401) {
+            guard cliTokens.refreshToken?.isEmpty == false else { throw MacAuthError.httpError(401) }
+            DevLog.trace("AuthTrace", "CLI token returned 401; refreshing and retrying once")
+            let refreshedToken = try await refreshCLIToken(for: cliTokens)
+            let (data, http) = try await makeAuthenticatedRequest(token: refreshedToken, for: url)
+            return try handleAuthenticatedResponse(data, http, source: .cliSession)
+        }
+    }
+
+    private func authenticatedRequestWithWebCredentials(
+        _ credentials: StoredCredentials,
+        for url: URL
+    ) async throws -> Data {
+        do {
+            let (data, http) = try await makeAuthenticatedRequest(token: credentials.accessToken, for: url)
+            return try handleAuthenticatedResponse(data, http, source: .webOAuth)
+        } catch MacAuthError.httpError(401) {
+            DevLog.trace("AuthTrace", "Web OAuth token returned 401; refreshing and retrying once")
+            let refreshedToken = try await refreshAccessToken()
+            let (data, http) = try await makeAuthenticatedRequest(token: refreshedToken, for: url)
+            return try handleAuthenticatedResponse(data, http, source: .webOAuth)
+        }
+    }
+
+    private func refreshCLIToken(for cliTokens: ClaudeCodeKeychainReader.CLITokens) async throws -> String {
+        guard let refreshToken = cliTokens.refreshToken, !refreshToken.isEmpty else {
+            DevLog.trace("AuthTrace", "Cannot refresh CLI token because no refresh token is stored")
+            throw MacAuthError.noToken
+        }
+
+        let clientID = cliTokens.clientId.flatMap { $0.isEmpty ? nil : $0 } ?? OAuth.clientID
+        let scopes = cliTokens.scopes.isEmpty ? OAuth.scopes : cliTokens.scopes.joined(separator: " ")
         var request = URLRequest(url: URL(string: OAuth.tokenEndpoint)!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode([
             "grant_type": "refresh_token",
             "refresh_token": refreshToken,
-            "client_id": OAuth.clientID,
-            "scope": OAuth.scopes,
+            "client_id": clientID,
+            "scope": scopes,
         ])
         let (data, response) = try await URLSession.shared.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard statusCode == 200 else { throw MacAuthError.refreshFailed }
+        guard statusCode == 200 else {
+            struct ErrorBody: Decodable { let error: String? }
+            let body = try? JSONDecoder().decode(ErrorBody.self, from: data)
+            DevLog.trace(
+                "AuthTrace",
+                "CLI token refresh failed status=\(statusCode) error=\(body?.error ?? "unknown") hasClientId=\(cliTokens.clientId?.isEmpty == false) scopeCount=\(cliTokens.scopes.count)"
+            )
+            throw MacAuthError.refreshFailed
+        }
         struct RefreshResponse: Decodable { let access_token: String; let expires_in: Int? }
         let tokens = try JSONDecoder().decode(RefreshResponse.self, from: data)
+        DevLog.trace("AuthTrace", "CLI token refresh succeeded")
         return tokens.access_token
     }
 
     // MARK: - Sign Out (Task 2.5)
 
     func signOut() {
+        CredentialStore.delete()
         authState.isAuthenticated = false
         authState.isAwaitingCode = false
         authState.requiresExplicitSignIn = true
         authState.authSource = .none
+        DevLog.trace("AuthTrace", "Signed out and cleared stored web OAuth credentials")
         onSignOut?()
     }
 }

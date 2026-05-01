@@ -242,6 +242,8 @@ struct MenuBarHeaderView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .disabled(isPolling)
+                    .help(isPolling ? "Refreshing usage" : "Refresh usage")
                 }
             }
             .padding(.horizontal, 17)
@@ -288,6 +290,9 @@ struct ServiceStatusBannerView: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(ClaudeCodeTheme.textPrimary)
                 .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+                .multilineTextAlignment(.leading)
 
             Spacer(minLength: 0)
         }
@@ -343,5 +348,52 @@ struct ServiceStatusBannerView: View {
             return trimmed
         }
         return nil
+    }
+}
+
+// MARK: - RefreshFeedbackBannerView
+
+struct RefreshFeedbackBannerView: View {
+    let feedback: UsagePoller.RefreshFeedback
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 14)
+
+            Text(feedback.message)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(ClaudeCodeTheme.textPrimary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(ClaudeCodeTheme.surface)
+        .overlay {
+            RoundedRectangle(cornerRadius: 9)
+                .stroke(color.opacity(0.32), lineWidth: 1)
+        }
+        .clipShape(.rect(cornerRadius: 9))
+    }
+
+    private var icon: String {
+        switch feedback.kind {
+        case .success: return "checkmark.circle.fill"
+        case .failure: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var color: Color {
+        switch feedback.kind {
+        case .success: return ClaudeCodeTheme.success
+        case .failure: return ClaudeCodeTheme.error
+        }
     }
 }

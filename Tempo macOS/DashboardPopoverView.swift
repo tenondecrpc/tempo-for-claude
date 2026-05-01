@@ -19,6 +19,12 @@ struct DashboardPopoverView: View {
                 serviceName: showServiceStatus ? coordinator.serviceStatusMonitor.affectedServiceName : nil
             )
 
+            if let feedback = coordinator.poller.refreshFeedback {
+                RefreshFeedbackBannerView(feedback: feedback)
+                    .padding(.horizontal, 17)
+                    .padding(.top, 8)
+            }
+
             if coordinator.isDemoMode {
                 HStack(spacing: 6) {
                     Image(systemName: "eye.fill")
@@ -39,25 +45,29 @@ struct DashboardPopoverView: View {
                 .background(ClaudeCodeTheme.textSecondary.opacity(0.08))
             }
 
-            if let usage = coordinator.poller.latestUsage {
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    VStack(spacing: 0) {
-                        usageContent(
-                            usage: usage,
-                            now: context.date,
-                            use24HourTime: use24HourTime
-                        )
-                        Divider().overlay(ClaudeCodeTheme.progressTrack)
-                        actionItems
-                    }
-                }
-            } else if let errorMessage = coordinator.poller.lastPollError {
-                errorView(message: errorMessage)
-            } else {
-                pollingView
-            }
+            contentState(use24HourTime: use24HourTime)
+
+            actionItems
         }
         .background(ClaudeCodeTheme.background)
+        .animation(.easeInOut(duration: 0.15), value: coordinator.poller.refreshFeedback?.id)
+    }
+
+    @ViewBuilder
+    private func contentState(use24HourTime: Bool) -> some View {
+        if let usage = coordinator.poller.latestUsage {
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                usageContent(
+                    usage: usage,
+                    now: context.date,
+                    use24HourTime: use24HourTime
+                )
+            }
+        } else if let errorMessage = coordinator.poller.lastPollError {
+            errorView(message: errorMessage)
+        } else {
+            pollingView
+        }
     }
 
     // MARK: - Usage Content
@@ -204,20 +214,42 @@ struct DashboardPopoverView: View {
     // MARK: - Error State
 
     private func errorView(message: String) -> some View {
-        VStack(spacing: 12) {
+        let isRateLimited = coordinator.poller.isRateLimited
+        let retryLabel = coordinator.poller.rateLimitRetryLabel
+        let signInSource = coordinator.authState.authSource == .cliSession ? "Claude Code" : "browser OAuth"
+
+        return VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 28))
                 .foregroundStyle(ClaudeCodeTheme.warning)
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(ClaudeCodeTheme.textSecondary)
-                .multilineTextAlignment(.center)
-            Button("Retry") {
+
+            VStack(spacing: 5) {
+                Text(isRateLimited ? "Usage temporarily unavailable" : "Unable to update usage")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(ClaudeCodeTheme.textPrimary)
+                    .multilineTextAlignment(.center)
+
+                if isRateLimited {
+                    Text("Signed in via \(signInSource). The usage API asked Tempo to retry in \(retryLabel ?? "a few minutes").")
+                        .font(.caption)
+                        .foregroundStyle(ClaudeCodeTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(ClaudeCodeTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+
+            Button(isRateLimited ? "Retry in \(retryLabel ?? "a few minutes")" : "Retry") {
                 coordinator.poller.pollNow()
             }
             .buttonStyle(.plain)
             .font(.caption.bold())
-            .foregroundStyle(ClaudeCodeTheme.accent)
+            .foregroundStyle(isRateLimited ? ClaudeCodeTheme.textTertiary : ClaudeCodeTheme.accent)
+            .disabled(isRateLimited)
         }
         .frame(maxWidth: .infinity)
         .padding(32)
