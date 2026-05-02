@@ -5,16 +5,33 @@ import Foundation
 @Observable
 @MainActor
 final class UsagePoller {
+    struct RefreshFeedback: Identifiable, Equatable {
+        enum Kind: Equatable {
+            case success
+            case failure
+        }
+
+        let id = UUID()
+        let kind: Kind
+        let message: String
+    }
 
     var lastPollAt: Date?
     var latestUsage: UsageState?
     var lastPollError: String?
     var isPolling = false
+    var refreshFeedback: RefreshFeedback?
+    var rateLimitRetryAt: Date? {
+        didSet {
+            persistRateLimitRetryAt()
+        }
+    }
 
     private let client: MacOSAPIClient
     private var timer: Timer?
     private var isRunning = false
     private var currentInterval: TimeInterval = 1800  // 30 minutes
+    private var refreshFeedbackDismissTask: Task<Void, Never>?
 
     // Reset-timestamp reconciliation state
     private var lastResetAt5h: Date?
@@ -22,6 +39,10 @@ final class UsagePoller {
     private var lastUtilization5h: Double = 0
 
     var onUsageState: ((UsageState) -> Void)?
+
+    private enum Defaults {
+        static let rateLimitRetryAtKey = "UsagePoller.rateLimitRetryAt"
+    }
 
     private static let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
@@ -31,6 +52,7 @@ final class UsagePoller {
 
     init(client: MacOSAPIClient) {
         self.client = client
+        rateLimitRetryAt = Self.loadPersistedRateLimitRetryAt()
     }
 
     // MARK: - Start / Stop
@@ -38,9 +60,20 @@ final class UsagePoller {
     func start() {
         stop()
         isRunning = true
+        refreshFeedback = nil
+
+        if scheduleActiveRateLimitIfNeeded() {
+            return
+        }
+
         currentInterval = 1800
-        Task { [weak self] in await self?.immediatePoll() }
-        scheduleTimer(interval: 1800)
+        lastPollError = nil
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.immediatePoll()
+            guard self.isRunning else { return }
+            self.scheduleTimer(interval: self.currentInterval)
+        }
     }
 
     func stop() {
@@ -50,7 +83,11 @@ final class UsagePoller {
     }
 
     func pollNow() {
-        Task { [weak self] in await self?.doPoll() }
+        guard !isPolling else { return }
+        if scheduleActiveRateLimitIfNeeded(isManualRefresh: true) {
+            return
+        }
+        Task { [weak self] in await self?.doPoll(isManualRefresh: true) }
     }
 
     // MARK: - Scheduling
@@ -61,6 +98,10 @@ final class UsagePoller {
             Task { @MainActor [weak self] in
                 guard let self, self.isRunning else { return }
                 self.timer = nil
+                guard !self.isPolling else {
+                    self.scheduleTimer(interval: self.currentInterval)
+                    return
+                }
                 await self.doPoll()
                 guard self.isRunning else { return }
                 self.scheduleTimer(interval: self.currentInterval)
@@ -74,27 +115,124 @@ final class UsagePoller {
 
     // MARK: - Core Poll
 
-    private func doPoll() async {
+    private func doPoll(isManualRefresh: Bool = false) async {
         isPolling = true
         defer { isPolling = false }
         do {
             let state = try await fetchUsage()
             currentInterval = 900
+            rateLimitRetryAt = nil
             lastPollAt = Date()
             lastPollError = nil
             latestUsage = state
             try writeToiCloud(state)
             onUsageState?(state)
+            if isManualRefresh {
+                showRefreshFeedback(.success, message: "Updated usage just now")
+            }
         } catch MacAuthError.rateLimited(let retryAfter) {
-            let backoff = min(max(retryAfter ?? currentInterval, currentInterval * 2), 3600)
+            let backoff = retryDelay(from: retryAfter)
+            let retryAt = Date().addingTimeInterval(backoff)
             currentInterval = backoff
-            lastPollError = "Rate limited - retrying in \(Int(backoff / 60)) min"
+            rateLimitRetryAt = retryAt
+            recordPollError(rateLimitMessage(retryAt: retryAt), isManualRefresh: isManualRefresh)
         } catch MacAuthError.httpError(let code) {
-            lastPollError = "API error (\(code))"
+            recordPollError("API error (\(code))", isManualRefresh: isManualRefresh)
         } catch MacAuthError.noToken {
-            lastPollError = "Not authenticated"
+            recordPollError("Not authenticated", isManualRefresh: isManualRefresh)
         } catch {
-            lastPollError = error.localizedDescription
+            recordPollError(error.localizedDescription, isManualRefresh: isManualRefresh)
+        }
+    }
+
+    private func retryDelay(from retryAfter: TimeInterval?) -> TimeInterval {
+        let requestedDelay = retryAfter ?? currentInterval * 2
+        return min(max(requestedDelay, 60), 3600)
+    }
+
+    private static func loadPersistedRateLimitRetryAt() -> Date? {
+        let timestamp = UserDefaults.standard.double(forKey: Defaults.rateLimitRetryAtKey)
+        guard timestamp > 0 else { return nil }
+        let retryAt = Date(timeIntervalSince1970: timestamp)
+        return retryAt > Date() ? retryAt : nil
+    }
+
+    private func persistRateLimitRetryAt() {
+        guard let rateLimitRetryAt else {
+            UserDefaults.standard.removeObject(forKey: Defaults.rateLimitRetryAtKey)
+            return
+        }
+        UserDefaults.standard.set(rateLimitRetryAt.timeIntervalSince1970, forKey: Defaults.rateLimitRetryAtKey)
+    }
+
+    @discardableResult
+    private func scheduleActiveRateLimitIfNeeded(isManualRefresh: Bool = false) -> Bool {
+        guard let retryAt = rateLimitRetryAt else { return false }
+        let remaining = retryAt.timeIntervalSinceNow
+        guard remaining > 0 else {
+            rateLimitRetryAt = nil
+            return false
+        }
+
+        currentInterval = remaining
+        let message = rateLimitMessage(retryAt: retryAt)
+        lastPollError = message
+        scheduleTimer(interval: remaining)
+
+        if isManualRefresh {
+            showRefreshFeedback(.failure, message: "Usage is rate limited - retry in \(retryDelayLabel(until: retryAt))")
+        }
+        return true
+    }
+
+    var rateLimitRetryLabel: String? {
+        guard let retryAt = rateLimitRetryAt, retryAt > Date() else { return nil }
+        return retryDelayLabel(until: retryAt)
+    }
+
+    var isRateLimited: Bool {
+        guard let retryAt = rateLimitRetryAt else { return false }
+        return retryAt > Date()
+    }
+
+    private func rateLimitMessage(retryAt: Date) -> String {
+        "Usage temporarily rate limited - retrying in \(retryDelayLabel(until: retryAt))"
+    }
+
+    private func retryDelayLabel(until retryAt: Date) -> String {
+        Self.retryDelayLabel(seconds: retryAt.timeIntervalSinceNow)
+    }
+
+    private static func retryDelayLabel(seconds: TimeInterval) -> String {
+        let minutes = max(1, Int(ceil(seconds / 60)))
+        if minutes < 60 {
+            return "\(minutes) min"
+        }
+
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        if remainingMinutes == 0 {
+            return "\(hours) hr"
+        }
+        return "\(hours) hr \(remainingMinutes) min"
+    }
+
+    private func recordPollError(_ message: String, isManualRefresh: Bool) {
+        lastPollError = message
+        DevLog.trace("AuthTrace", "Usage poll failed manual=\(isManualRefresh) message=\(message)")
+        if isManualRefresh {
+            showRefreshFeedback(.failure, message: "Refresh failed - \(message)")
+        }
+    }
+
+    private func showRefreshFeedback(_ kind: RefreshFeedback.Kind, message: String) {
+        refreshFeedbackDismissTask?.cancel()
+        let feedback = RefreshFeedback(kind: kind, message: message)
+        refreshFeedback = feedback
+        refreshFeedbackDismissTask = Task { @MainActor [weak self, id = feedback.id] in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled, self?.refreshFeedback?.id == id else { return }
+            self?.refreshFeedback = nil
         }
     }
 
