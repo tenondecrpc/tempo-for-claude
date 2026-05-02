@@ -5,9 +5,19 @@ import Security
 
 /// Reads OAuth tokens from the Claude Code CLI's macOS Keychain entry.
 /// Service: "Claude Code-credentials", Account: $USER
+///
+/// Caches results in memory and suppresses repeat reads after the user denies
+/// or cancels the keychain prompt, so a single denial does not turn into a
+/// barrage of dialogs across the polling and request paths.
 enum ClaudeCodeKeychainReader {
 
     private static let serviceName = "Claude Code-credentials"
+
+    /// How long a successful read stays cached before we touch the keychain again.
+    private static let cacheTTL: TimeInterval = 5 * 60
+
+    /// How long a user-denied or user-cancelled read suppresses retries.
+    private static let denialBackoff: TimeInterval = 30 * 60
 
     struct CLITokens: Codable {
         let accessToken: String
@@ -22,20 +32,45 @@ enum ClaudeCodeKeychainReader {
         let claudeAiOauth: CLITokens?
     }
 
+    private struct CacheEntry {
+        let tokens: CLITokens?
+        let storedAt: Date
+        let ttl: TimeInterval
+
+        var isFresh: Bool { Date().timeIntervalSince(storedAt) < ttl }
+    }
+
+    private static let cacheLock = NSLock()
+    private static var cache: CacheEntry?
+
     /// Returns the CLI OAuth tokens if available in the macOS Keychain.
     static func loadTokens() -> CLITokens? {
-        if let tokens = loadTokensWithSecurityFramework() {
-            DevLog.trace("AuthTrace", "Loaded Claude Code CLI tokens via Security framework")
-            return tokens
-        }
+        if let cached = cachedTokens() { return cached }
 
-        if let tokens = loadTokensWithSecurityTool() {
-            DevLog.trace("AuthTrace", "Loaded Claude Code CLI tokens via security tool fallback")
-            return tokens
-        }
+        let tokens = loadTokensWithSecurityFramework()
+        return tokens
+    }
 
-        DevLog.trace("AuthTrace", "No Claude Code CLI tokens found in Keychain")
-        return nil
+    /// Drops the in-memory cache so the next call re-reads the keychain.
+    /// Call this after a successful sign-in or when the user explicitly
+    /// retries access from the UI.
+    static func invalidateCache() {
+        cacheLock.lock()
+        cache = nil
+        cacheLock.unlock()
+    }
+
+    private static func cachedTokens() -> CLITokens? {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        guard let entry = cache, entry.isFresh else { return nil }
+        return entry.tokens
+    }
+
+    private static func storeCache(_ tokens: CLITokens?, ttl: TimeInterval) {
+        cacheLock.lock()
+        cache = CacheEntry(tokens: tokens, storedAt: Date(), ttl: ttl)
+        cacheLock.unlock()
     }
 
     private static func loadTokensWithSecurityFramework() -> CLITokens? {
@@ -49,38 +84,34 @@ enum ClaudeCodeKeychainReader {
 
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data else {
-            DevLog.trace("AuthTrace", "Security framework Claude Code token lookup failed status=\(status)")
+
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data, let tokens = decodeTokens(from: data) else {
+                DevLog.trace("AuthTrace", "Claude Code keychain read returned data but decoding failed")
+                storeCache(nil, ttl: cacheTTL)
+                return nil
+            }
+            DevLog.trace("AuthTrace", "Loaded Claude Code CLI tokens via Security framework")
+            storeCache(tokens, ttl: cacheTTL)
+            return tokens
+
+        case errSecItemNotFound:
+            DevLog.trace("AuthTrace", "Claude Code keychain item not found")
+            storeCache(nil, ttl: cacheTTL)
             return nil
-        }
 
-        return decodeTokens(from: data)
-    }
+        case errSecUserCanceled, errSecAuthFailed:
+            DevLog.trace(
+                "AuthTrace",
+                "Claude Code keychain access denied by user status=\(status); suppressing further reads for \(Int(denialBackoff))s"
+            )
+            storeCache(nil, ttl: denialBackoff)
+            return nil
 
-    private static func loadTokensWithSecurityTool() -> CLITokens? {
-        let account = NSUserName()
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = [
-            "find-generic-password",
-            "-a", account,
-            "-w",
-            "-s", serviceName,
-        ]
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-
-            guard process.terminationStatus == 0 else { return nil }
-
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return decodeTokens(from: data)
-        } catch {
+        default:
+            DevLog.trace("AuthTrace", "Claude Code keychain read failed status=\(status)")
+            storeCache(nil, ttl: cacheTTL)
             return nil
         }
     }
@@ -100,9 +131,7 @@ enum ClaudeCodeKeychainReader {
 
     /// Returns true if valid CLI OAuth tokens exist in the keychain.
     static func hasValidSession() -> Bool {
-        guard let tokens = loadTokens() else { return false }
-        guard let accessToken = tokens.accessToken.isEmpty ? nil : tokens.accessToken else { return false }
-        _ = accessToken
+        guard let tokens = loadTokens(), !tokens.accessToken.isEmpty else { return false }
         return isAccessTokenFresh(tokens)
     }
 

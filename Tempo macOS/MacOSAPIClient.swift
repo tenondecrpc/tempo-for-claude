@@ -466,6 +466,7 @@ final class MacOSAPIClient {
 
     func signOut() {
         CredentialStore.delete()
+        ClaudeCodeKeychainReader.invalidateCache()
         authState.isAuthenticated = false
         authState.isAwaitingCode = false
         authState.requiresExplicitSignIn = true
