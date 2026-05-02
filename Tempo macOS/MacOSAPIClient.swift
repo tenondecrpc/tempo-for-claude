@@ -128,6 +128,12 @@ final class MacOSAPIClient {
     private var codeVerifier: String?
     private var pendingOAuthState: String?
 
+    /// Single-flight tasks for token refresh. Concurrent callers await the same
+    /// in-flight refresh instead of issuing parallel requests to the token
+    /// endpoint, which would otherwise trip rate limits.
+    private var inFlightCLIRefresh: Task<String, Error>?
+    private var inFlightWebRefresh: Task<String, Error>?
+
     init(authState: MacAuthState) {
         self.authState = authState
     }
@@ -288,6 +294,20 @@ final class MacOSAPIClient {
     // MARK: - Token Refresh (Task 2.4)
 
     func refreshAccessToken() async throws -> String {
+        if let inFlight = inFlightWebRefresh {
+            DevLog.trace("AuthTrace", "Awaiting in-flight web OAuth refresh instead of issuing a new one")
+            return try await inFlight.value
+        }
+        let task = Task<String, Error> { [weak self] in
+            guard let self else { throw MacAuthError.noToken }
+            return try await self.performWebRefresh()
+        }
+        inFlightWebRefresh = task
+        defer { inFlightWebRefresh = nil }
+        return try await task.value
+    }
+
+    private func performWebRefresh() async throws -> String {
         guard let credentials = CredentialStore.load(), !credentials.refreshToken.isEmpty else {
             DevLog.trace("AuthTrace", "Cannot refresh web OAuth token because no refresh token is stored")
             signOut()
@@ -429,6 +449,20 @@ final class MacOSAPIClient {
     }
 
     private func refreshCLIToken(for cliTokens: ClaudeCodeKeychainReader.CLITokens) async throws -> String {
+        if let inFlight = inFlightCLIRefresh {
+            DevLog.trace("AuthTrace", "Awaiting in-flight CLI token refresh instead of issuing a new one")
+            return try await inFlight.value
+        }
+        let task = Task<String, Error> { [weak self] in
+            guard let self else { throw MacAuthError.noToken }
+            return try await self.performCLIRefresh(for: cliTokens)
+        }
+        inFlightCLIRefresh = task
+        defer { inFlightCLIRefresh = nil }
+        return try await task.value
+    }
+
+    private func performCLIRefresh(for cliTokens: ClaudeCodeKeychainReader.CLITokens) async throws -> String {
         guard let refreshToken = cliTokens.refreshToken, !refreshToken.isEmpty else {
             DevLog.trace("AuthTrace", "Cannot refresh CLI token because no refresh token is stored")
             throw MacAuthError.noToken

@@ -98,6 +98,10 @@ final class UsagePoller {
             Task { @MainActor [weak self] in
                 guard let self, self.isRunning else { return }
                 self.timer = nil
+                guard !self.isPolling else {
+                    self.scheduleTimer(interval: self.currentInterval)
+                    return
+                }
                 await self.doPoll()
                 guard self.isRunning else { return }
                 self.scheduleTimer(interval: self.currentInterval)
