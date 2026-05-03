@@ -34,7 +34,7 @@ state=<random>
 
 **Callback note**: Uses a "paste code" flow - the redirect lands in the browser and the user pastes a `<code>#<state>` string. Code = part before `#`, state = part after.
 
-**Claude Code credential reuse**: Claude Code does NOT expose reusable OAuth tokens. `~/.claude/.claude.json` contains account metadata (`oauthAccount.emailAddress`, `displayName`, `accountUuid`) but no `access_token` or `refresh_token`. `~/.claude/credentials.json` exists but is empty (3 bytes). Each app (Tempo, claude-usage-bar, etc.) MUST manage its own OAuth tokens via its own token exchange. The email from `.claude.json` can be read for display purposes only.
+**Tempo auth source order**: Tempo prefers its own OAuth credentials, stored in the macOS Keychain under service `com.tenondev.tempo.claude.oauth`. If those credentials are missing or cannot be restored, Tempo may read the Claude Code CLI Keychain item (`Claude Code-credentials`) as a read-only fallback, but only uses the CLI access token while it is still fresh. Tempo MUST NOT use Claude Code's refresh token, write to Claude Code's Keychain item, delete Claude Code's Keychain item, or repair the Claude Code terminal session. If neither Tempo OAuth nor a fresh CLI access token is available, Tempo starts its own OAuth PKCE browser flow. See `docs/AUTH_FLOW.md`.
 
 **Token exchange - POST body (JSON):**
 ```json
@@ -60,7 +60,7 @@ state=<random>
 }
 ```
 
-**Refresh trigger**: proactively check `needsRefresh()` before each call; also retry on any `401` by forcing refresh then replaying once. Invalidate session on permanent failure when token is expired.
+**Refresh trigger**: Tempo OAuth credentials are refreshed when expired and once after a `401` before replaying the request. Claude Code CLI credentials are never refreshed by Tempo; a CLI-sourced `401` falls back to Tempo OAuth if available or fails without touching Claude Code credentials.
 
 ### Usage Endpoint
 
@@ -130,9 +130,9 @@ UsageState(
 
 - On `429`: exponential backoff, capped at **1 hour**
 - Check `Retry-After` header (seconds); if absent, double the current interval
-- Formula: `min(max(retryAfter ?? currentInterval, currentInterval * 2), 3600)`
+- Formula: `min(max(retryAfter ?? currentInterval * 2, 60), 3600)`
 - Default polling target: **15 minutes** for our app (claude-usage-bar uses 30 min)
-- Token storage: **iOS Keychain only** - never `UserDefaults`
+- Token storage: **macOS and iOS Keychain** - never `UserDefaults`, widgets, or iCloud. macOS migrates the legacy `~/.config/tempo-for-claude/credentials.json` file into Keychain and deletes the file after migration.
 
 ---
 

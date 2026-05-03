@@ -1,4 +1,5 @@
 import Foundation
+import CommonCrypto
 
 @MainActor
 final class SessionEventWriter {
@@ -166,6 +167,17 @@ final class SessionEventWriter {
         projectDirName.contains("claude-mem-observer-sessions")
     }
 
+    /// Returns a deterministic 12-character hex SHA-256 hash of the project directory name.
+    nonisolated private static func hashProjectDirName(_ name: String) -> String {
+        let data = Data(name.utf8)
+        let hash = data.withUnsafeBytes { buffer -> String in
+            var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+            CC_SHA256(buffer.baseAddress, CC_LONG(buffer.count), &digest)
+            return digest.map { String(format: "%02x", $0) }.joined()
+        }
+        return String(hash.prefix(12))
+    }
+
     nonisolated private static func parseSessionInfo(from candidate: SessionCandidate) -> SessionInfo? {
         let decoder = JSONDecoder()
         guard let data = try? Data(contentsOf: candidate.fileURL) else {
@@ -222,7 +234,8 @@ final class SessionEventWriter {
         let startDate = firstTimestamp ?? endDate
         let durationSeconds = max(1, Int(endDate.timeIntervalSince(startDate)))
         let sessionBaseName = candidate.fileURL.deletingPathExtension().lastPathComponent
-        let sessionID = "\(candidate.projectDirName):\(sessionBaseName)"
+        let projectPrefix = candidate.projectDirName.isEmpty ? "unknown" : hashProjectDirName(candidate.projectDirName)
+        let sessionID = "\(projectPrefix):\(sessionBaseName)"
 
         return SessionInfo(
             sessionId: sessionID,

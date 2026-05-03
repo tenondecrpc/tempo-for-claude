@@ -82,6 +82,21 @@ final class UsagePoller {
         timer = nil
     }
 
+    func resetAuthenticationBackoff(clearUsage: Bool = false) {
+        timer?.invalidate()
+        timer = nil
+        currentInterval = 1800
+        rateLimitRetryAt = nil
+        lastPollError = nil
+        refreshFeedback = nil
+        refreshFeedbackDismissTask?.cancel()
+        refreshFeedbackDismissTask = nil
+        if clearUsage {
+            latestUsage = nil
+            lastPollAt = nil
+        }
+    }
+
     func pollNow() {
         guard !isPolling else { return }
         if scheduleActiveRateLimitIfNeeded(isManualRefresh: true) {

@@ -18,6 +18,7 @@ Important constraints:
 
 - The Anthropic OAuth API is the authoritative source for `utilization5h`, `utilization7d`, `resetAt5h`, and `resetAt7d`.
 - Claude local data is the authoritative source for session history and completion detection in the current repo.
+- Tempo OAuth credentials are the preferred source for usage API authentication. A fresh Claude Code CLI access token may be used as a read-only fallback, but Tempo never refreshes, writes, or deletes Claude Code credentials. See `docs/AUTH_FLOW.md`.
 - Tempo does not run a custom backend today. Alerts are local and depend on iCloud sync plus the iPhone/watch relay.
 
 ## Completed Foundation
@@ -65,6 +66,8 @@ Important constraints:
 - iOS companion Dashboard, Activity, and Settings tabs.
 - iOS and macOS widget bundles backed by `WidgetUsageSnapshot`.
 - watch Trend and Sessions tabs, plus an accessory circular widget.
+- Light mode with Dark / Light / System appearance picker (macOS), synced via iCloud to iOS and watchOS.
+- Instantaneous burn rate display on macOS popover and iOS dashboard.
 
 ## Open Roadmap
 
@@ -127,16 +130,19 @@ Important constraints:
 - Cross-platform transport replacement for iCloud, if Tempo ever targets Windows or non-Apple sync paths.
 - Dedicated server push delivery for session completion. Current notifications remain local-only.
 
+## Security Hardening
+
+All findings from the 2026-05-03 security audit (items #1-#9) are implemented. The completed OpenSpec change is archived under `openspec/changes/archive/`.
+
 ## Unscheduled Backlog
 
 1. **Multi-account support** - Add and switch between multiple Claude accounts within one app instance.
-2. **Light mode** - Support a full light-theme variant instead of dark-mode-only UI.
-3. **Pace prediction** - Forecast session and weekly usage based on burn rate and historical behavior.
-4. **Live session chart** - Show real-time, sub-30-second chart updates during an active session.
-5. **Day/week usage breakdowns** - Add weekday and time-of-day breakdowns, heatmaps, or similar granular views.
-6. **Bar charts** - Offer bar-chart alternatives alongside the current line/area visualizations.
-7. **Consumption rate histogram** - Show how often usage falls into utilization bands such as 0-25% or 25-50%.
-8. **Scheduled triggers / automations** - Add configurable automation rules such as "alert me at 80%" or Shortcuts integration.
-9. **Codex / Claude API key support** - Support usage tracking for users working through raw API keys instead of OAuth.
-10. **All Accounts dashboard** - Aggregate usage across multiple Claude accounts or workspaces.
-11. **Dedicated-server push notifications for Claude Code replies** - Detect Claude Code reply completion on macOS and send the event to a dedicated push server that owns device registration, APNs credentials, and delivery to iPhone and watch. Keep this as a future backlog item, not part of the current committed phases.
+2. **Historical pace prediction** - Forecast session and weekly usage based on burn rate and historical behavior. The instantaneous burn rate (%/hr, shown in the macOS popover and iOS dashboard) is already shipped; this item covers trend-line extrapolation and weekly forecasts from `usage-history.json`.
+3. **Live session chart** - Show real-time, sub-30-second chart updates during an active session.
+4. **Time-of-day breakdowns** - Add hourly and time-of-day breakdowns alongside the existing day-level views (watch 7-day bar chart, macOS activity heatmap).
+5. **Bar chart alternatives on iOS/macOS** - Offer `BarMark`-based chart alternatives to the current line/area charts. A custom bar chart already exists on watchOS (`TrendView`).
+6. **Consumption rate histogram** - Show how often usage falls into utilization bands such as 0-25% or 25-50%.
+7. **Scheduled triggers / automations** - Add configurable automation rules such as "alert me at 80%" or Shortcuts integration.
+8. **Codex / Claude API key support** - Support usage tracking for users working through raw API keys instead of OAuth.
+9. **All Accounts dashboard** - Aggregate usage across multiple Claude accounts or workspaces. Blocked by multi-account support (#1).
+10. **Dedicated-server push notifications for Claude Code replies** - Detect Claude Code reply completion on macOS and send the event to a dedicated push server that owns device registration, APNs credentials, and delivery to iPhone and watch. Keep this as a future backlog item, not part of the current committed phases.

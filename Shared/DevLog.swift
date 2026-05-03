@@ -7,7 +7,7 @@ enum DevLog {
         let text = message()
         let logger = Logger(subsystem: subsystem, category: category)
         if category == "AuthTrace" {
-            logger.notice("\(text, privacy: .public)")
+            logger.notice("\(text, privacy: .private)")
         } else {
             logger.debug("\(text, privacy: .public)")
         }

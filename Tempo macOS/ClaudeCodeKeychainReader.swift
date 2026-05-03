@@ -14,7 +14,8 @@ enum ClaudeCodeKeychainReader {
     private static let serviceName = "Claude Code-credentials"
 
     /// How long a successful read stays cached before we touch the keychain again.
-    private static let cacheTTL: TimeInterval = 5 * 60
+    /// Aligned with Claude Code CLI's KEYCHAIN_CACHE_TTL_MS (30 seconds).
+    private static let cacheTTL: TimeInterval = 30
 
     /// How long a user-denied or user-cancelled read suppresses retries.
     private static let denialBackoff: TimeInterval = 30 * 60
