@@ -1,8 +1,4 @@
-## Purpose
-
-Define secure local storage for macOS security-scoped bookmarks.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Security-scoped bookmarks must move from UserDefaults to Keychain
 The macOS security-scoped bookmarks for `~/.claude/` folder access SHALL be migrated from `UserDefaults.standard` to the macOS Keychain (`Security.framework`), matching the Keychain pattern used for OAuth tokens on iOS. Bookmark reads SHALL be cached in memory per app process and keyed by account to prevent repeated Keychain prompts during concurrent startup access.

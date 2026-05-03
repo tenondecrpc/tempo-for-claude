@@ -46,8 +46,16 @@ enum ClaudeCodeKeychainReader {
 
     /// Returns the CLI OAuth tokens if available in the macOS Keychain.
     static func loadTokens() -> CLITokens? {
-        if let cached = cachedTokens() { return cached }
+        DevLog.trace("KeychainTrace", "Claude Code credential token load requested")
+        DevLog.trace("AuthTrace", "Claude Code keychain token load requested")
+        if let cached = cachedTokens() {
+            DevLog.trace("KeychainTrace", "Claude Code credential token load served from cache")
+            DevLog.trace("AuthTrace", "Claude Code keychain token load served from in-memory cache")
+            return cached
+        }
 
+        DevLog.trace("KeychainTrace", "Claude Code credential cache miss; querying Keychain")
+        DevLog.trace("AuthTrace", "Claude Code keychain token cache miss; querying Security framework")
         let tokens = loadTokensWithSecurityFramework()
         return tokens
     }
@@ -89,20 +97,24 @@ enum ClaudeCodeKeychainReader {
         switch status {
         case errSecSuccess:
             guard let data = result as? Data, let tokens = decodeTokens(from: data) else {
+                DevLog.trace("KeychainTrace", "Claude Code credential item read succeeded but decode failed")
                 DevLog.trace("AuthTrace", "Claude Code keychain read returned data but decoding failed")
                 storeCache(nil, ttl: cacheTTL)
                 return nil
             }
+            DevLog.trace("KeychainTrace", "Claude Code credential item read succeeded")
             DevLog.trace("AuthTrace", "Loaded Claude Code CLI tokens via Security framework")
             storeCache(tokens, ttl: cacheTTL)
             return tokens
 
         case errSecItemNotFound:
+            DevLog.trace("KeychainTrace", "Claude Code credential item not found")
             DevLog.trace("AuthTrace", "Claude Code keychain item not found")
             storeCache(nil, ttl: cacheTTL)
             return nil
 
         case errSecUserCanceled, errSecAuthFailed:
+            DevLog.trace("KeychainTrace", "Claude Code credential item access denied or canceled status=\(status)")
             DevLog.trace(
                 "AuthTrace",
                 "Claude Code keychain access denied by user status=\(status); suppressing further reads for \(Int(denialBackoff))s"
@@ -111,6 +123,7 @@ enum ClaudeCodeKeychainReader {
             return nil
 
         default:
+            DevLog.trace("KeychainTrace", "Claude Code credential item read failed status=\(status)")
             DevLog.trace("AuthTrace", "Claude Code keychain read failed status=\(status)")
             storeCache(nil, ttl: cacheTTL)
             return nil

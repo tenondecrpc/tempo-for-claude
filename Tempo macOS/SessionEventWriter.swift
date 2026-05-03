@@ -15,6 +15,9 @@ final class SessionEventWriter {
 
     nonisolated private static let pollInterval: TimeInterval = 20
     nonisolated private static let idleThreshold: TimeInterval = 15
+    /// Only scan files modified within this window. Older sessions are already
+    /// processed and tracked via `lastWrittenSessionID`.
+    nonisolated private static let scanWindow: TimeInterval = 5 * 60
 
     private let defaults = UserDefaults.standard
     private var timer: Timer?
@@ -95,7 +98,7 @@ final class SessionEventWriter {
     nonisolated private static func readLatestCompletedSession(now: Date = Date()) throws -> SessionInfo? {
         do {
             return try ClaudeLocalDBReader.withClaudeFolderAccess { claudeURL in
-                let candidates = try latestSessionCandidates(in: claudeURL)
+                let candidates = try latestSessionCandidates(in: claudeURL, now: now)
                     .sorted(by: { $0.modifiedAt > $1.modifiedAt })
 
                 DevLog.trace("AlertTrace", "SessionWriter discovered \(candidates.count) session candidate(s)")
@@ -116,7 +119,8 @@ final class SessionEventWriter {
                         )
                         return info
                     }
-                    DevLog.trace("AlertTrace", "SessionWriter failed to parse candidate path=\(candidate.fileURL.path)")
+                    // parseSessionInfo already logs the specific rejection reason
+                    // (e.g. "no assistant token usage", "empty file", "read failed")
                 }
                 DevLog.trace("AlertTrace", "SessionWriter did not find a parseable completed session")
                 return nil
@@ -127,7 +131,7 @@ final class SessionEventWriter {
         }
     }
 
-    nonisolated private static func latestSessionCandidates(in claudeURL: URL) throws -> [SessionCandidate] {
+    nonisolated private static func latestSessionCandidates(in claudeURL: URL, now: Date = Date()) throws -> [SessionCandidate] {
         let fm = FileManager.default
         let projectsURL = claudeURL.appendingPathComponent("projects")
         guard fm.fileExists(atPath: projectsURL.path) else {
@@ -135,6 +139,7 @@ final class SessionEventWriter {
             return []
         }
 
+        let cutoffDate = now.addingTimeInterval(-scanWindow)
         let projectEntries = try fm.contentsOfDirectory(at: projectsURL, includingPropertiesForKeys: nil)
         var candidates: [SessionCandidate] = []
 
@@ -150,6 +155,7 @@ final class SessionEventWriter {
             for fileURL in files where fileURL.pathExtension == "jsonl" {
                 let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey])
                 let modifiedAt = values?.contentModificationDate ?? Date.distantPast
+                guard modifiedAt >= cutoffDate else { continue }
                 candidates.append(
                     SessionCandidate(
                         fileURL: fileURL,
