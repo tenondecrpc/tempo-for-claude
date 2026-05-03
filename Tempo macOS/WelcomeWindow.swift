@@ -110,13 +110,9 @@ struct WelcomeWindowView: View {
         }
         .padding(40)
         .onAppear {
+            DevLog.trace("BookmarkTrace", "Welcome window appeared; loading detected Claude account")
             detectedAccount = DetectedClaudeAccount.load()
-            if ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil,
-               !ClaudeLocalDBReader.hasHomeBookmark() {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    coordinator.localDB.requestHomeDirectoryAccess()
-                }
-            }
+            DevLog.trace("BookmarkTrace", "Welcome window does not request folder access automatically")
         }
     }
 

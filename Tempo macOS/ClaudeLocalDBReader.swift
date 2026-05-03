@@ -104,7 +104,15 @@ nonisolated private struct JNLContentBlock: Decodable {
 private enum BookmarkKeychainStore {
     nonisolated private static let service = "com.tenondev.tempo.claude.bookmarks"
 
+    private struct CacheEntry {
+        let data: Data?
+    }
+
+    private static let cacheLock = NSLock()
+    private static var cache: [String: CacheEntry] = [:]
+
     nonisolated static func saveBookmark(data: Data, account: String) {
+        DevLog.trace("BookmarkTrace", "Saving bookmark account=\(account) bytes=\(data.count)")
         let baseQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -114,14 +122,30 @@ private enum BookmarkKeychainStore {
             baseQuery as CFDictionary,
             [kSecValueData as String: data] as CFDictionary
         )
-        if updateStatus == errSecSuccess { return }
+        if updateStatus == errSecSuccess {
+            storeCachedBookmark(data, account: account)
+            DevLog.trace("BookmarkTrace", "Updated existing bookmark account=\(account)")
+            return
+        }
         var addQuery = baseQuery
         addQuery[kSecValueData as String] = data
         addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(addQuery as CFDictionary, nil)
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus == errSecSuccess || addStatus == errSecDuplicateItem {
+            storeCachedBookmark(data, account: account)
+        }
+        DevLog.trace("BookmarkTrace", "Added bookmark account=\(account) status=\(addStatus)")
     }
 
     nonisolated static func loadBookmark(account: String) -> Data? {
+        cacheLock.lock()
+        if let entry = cache[account] {
+            cacheLock.unlock()
+            DevLog.trace("BookmarkTrace", "Bookmark load served from cache account=\(account) hasData=\(entry.data != nil)")
+            return entry.data
+        }
+
+        DevLog.trace("BookmarkTrace", "Loading bookmark account=\(account)")
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -130,26 +154,75 @@ private enum BookmarkKeychainStore {
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return data
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data else {
+                cache[account] = CacheEntry(data: nil)
+                cacheLock.unlock()
+                DevLog.trace("BookmarkTrace", "Bookmark load returned non-data result account=\(account)")
+                return nil
+            }
+            cache[account] = CacheEntry(data: data)
+            cacheLock.unlock()
+            DevLog.trace("BookmarkTrace", "Loaded bookmark account=\(account) bytes=\(data.count)")
+            return data
+        case errSecItemNotFound:
+            cache[account] = CacheEntry(data: nil)
+            cacheLock.unlock()
+            DevLog.trace("BookmarkTrace", "Bookmark not found account=\(account)")
+            return nil
+        case errSecUserCanceled, errSecAuthFailed:
+            cache[account] = CacheEntry(data: nil)
+            cacheLock.unlock()
+            DevLog.trace("BookmarkTrace", "Bookmark load denied or canceled account=\(account) status=\(status)")
+            return nil
+        default:
+            cache[account] = CacheEntry(data: nil)
+            cacheLock.unlock()
+            DevLog.trace("BookmarkTrace", "Bookmark load failed account=\(account) status=\(status)")
+            return nil
+        }
     }
 
     nonisolated static func deleteBookmark(account: String) {
+        DevLog.trace("BookmarkTrace", "Deleting bookmark account=\(account)")
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
-        SecItemDelete(query as CFDictionary)
+        let status = SecItemDelete(query as CFDictionary)
+        clearCachedBookmark(account: account)
+        DevLog.trace("BookmarkTrace", "Deleted bookmark account=\(account) status=\(status)")
     }
 
     /// Migrates a bookmark from UserDefaults to Keychain if present.
     nonisolated static func migrateIfNeeded(defaultsKey: String, account: String) {
-        guard BookmarkKeychainStore.loadBookmark(account: account) == nil,
-              let data = UserDefaults.standard.data(forKey: defaultsKey) else { return }
+        DevLog.trace("BookmarkTrace", "Checking bookmark migration defaultsKey=\(defaultsKey) account=\(account)")
+        guard BookmarkKeychainStore.loadBookmark(account: account) == nil else {
+            DevLog.trace("BookmarkTrace", "Skipping bookmark migration because Keychain item exists account=\(account)")
+            return
+        }
+        guard let data = UserDefaults.standard.data(forKey: defaultsKey) else {
+            DevLog.trace("BookmarkTrace", "Skipping bookmark migration because legacy defaults item is absent account=\(account)")
+            return
+        }
         saveBookmark(data: data, account: account)
         UserDefaults.standard.removeObject(forKey: defaultsKey)
+        DevLog.trace("BookmarkTrace", "Migrated bookmark from UserDefaults to Keychain account=\(account)")
+    }
+
+    private static func storeCachedBookmark(_ data: Data?, account: String) {
+        cacheLock.lock()
+        cache[account] = CacheEntry(data: data)
+        cacheLock.unlock()
+    }
+
+    private static func clearCachedBookmark(account: String) {
+        cacheLock.lock()
+        cache.removeValue(forKey: account)
+        cacheLock.unlock()
     }
 }
 
@@ -161,7 +234,6 @@ final class ClaudeLocalDBReader {
 
     private(set) var isAvailable = false
     private(set) var needsAccessGrant = false
-    private(set) var needsHomeAccessGrant = false
     private(set) var dailyActivity: [LocalDailyActivity] = []
     private(set) var dailyModelTokens: [LocalDailyModelTokens] = []
     private(set) var modelUsage: [String: LocalModelUsageItem] = [:]
@@ -171,25 +243,17 @@ final class ClaudeLocalDBReader {
     private(set) var totalSubagents: Int = 0
 
     nonisolated static let bookmarkKey = "claudeFolderBookmark"
-    nonisolated static let homeBookmarkKey = "homeFolderBookmark"
 
     enum AccessError: Error {
         case accessRequired
-        case homeAccessRequired
     }
 
     init() {
         Task { await load() }
-        updateHomeAccessState()
     }
 
     func reload() {
         Task { await load() }
-        updateHomeAccessState()
-    }
-
-    private func updateHomeAccessState() {
-        needsHomeAccessGrant = Self.isSandboxed && !Self.hasHomeBookmark()
     }
 
     // MARK: - Folder Access
@@ -223,6 +287,7 @@ final class ClaudeLocalDBReader {
     // MARK: - Bookmark Resolution
 
     nonisolated static func resolveBookmarkedClaudeURL() -> URL? {
+        DevLog.trace("BookmarkTrace", "Resolving Claude folder bookmark")
         BookmarkKeychainStore.migrateIfNeeded(defaultsKey: bookmarkKey, account: "claudeFolder")
         guard let data = BookmarkKeychainStore.loadBookmark(account: "claudeFolder") else { return nil }
         var isStale = false
@@ -231,100 +296,41 @@ final class ClaudeLocalDBReader {
             options: .withSecurityScope,
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
-        ) else { return nil }
+        ) else {
+            DevLog.trace("BookmarkTrace", "Failed to resolve Claude folder bookmark data")
+            return nil
+        }
         if isStale, let fresh = try? url.bookmarkData(
             options: .withSecurityScope,
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         ) {
+            DevLog.trace("BookmarkTrace", "Claude folder bookmark is stale; saving refreshed bookmark")
             BookmarkKeychainStore.saveBookmark(data: fresh, account: "claudeFolder")
         }
+        DevLog.trace("BookmarkTrace", "Resolved Claude folder bookmark isStale=\(isStale)")
         return url
     }
 
     nonisolated static func withClaudeFolderAccess<T>(_ body: (URL) throws -> T) throws -> T {
         let scopedURL = resolveBookmarkedClaudeURL()
         let accessing = scopedURL?.startAccessingSecurityScopedResource() ?? false
+        DevLog.trace("BookmarkTrace", "Claude folder scoped access started=\(accessing) hasBookmark=\(scopedURL != nil)")
         defer {
             if accessing {
                 scopedURL?.stopAccessingSecurityScopedResource()
+                DevLog.trace("BookmarkTrace", "Claude folder scoped access stopped")
             }
         }
 
         if isSandboxed && scopedURL == nil {
+            DevLog.trace("BookmarkTrace", "Claude folder access required because app is sandboxed and bookmark is unavailable")
             throw AccessError.accessRequired
         }
 
         let claudeURL = scopedURL ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude")
         return try body(claudeURL)
-    }
-
-    // MARK: - Home Directory Bookmark
-
-    nonisolated static func resolveHomeBookmarkURL() -> URL? {
-        BookmarkKeychainStore.migrateIfNeeded(defaultsKey: homeBookmarkKey, account: "homeFolder")
-        guard let data = BookmarkKeychainStore.loadBookmark(account: "homeFolder") else { return nil }
-        var isStale = false
-        guard let url = try? URL(
-            resolvingBookmarkData: data,
-            options: .withSecurityScope,
-            relativeTo: nil,
-            bookmarkDataIsStale: &isStale
-        ) else { return nil }
-        if isStale, let fresh = try? url.bookmarkData(
-            options: .withSecurityScope,
-            includingResourceValuesForKeys: nil,
-            relativeTo: nil
-        ) {
-            BookmarkKeychainStore.saveBookmark(data: fresh, account: "homeFolder")
-        }
-        return url
-    }
-
-    static func hasHomeBookmark() -> Bool {
-        resolveHomeBookmarkURL() != nil
-    }
-
-    nonisolated static func withHomeDirectoryAccess<T>(_ body: (URL) throws -> T) throws -> T {
-        let scopedURL = resolveHomeBookmarkURL()
-        let accessing = scopedURL?.startAccessingSecurityScopedResource() ?? false
-        defer {
-            if accessing {
-                scopedURL?.stopAccessingSecurityScopedResource()
-            }
-        }
-
-        if isSandboxed && scopedURL == nil {
-            throw AccessError.homeAccessRequired
-        }
-
-        let homeURL = scopedURL ?? FileManager.default.homeDirectoryForCurrentUser
-        return try body(homeURL)
-    }
-
-    func requestHomeDirectoryAccess() {
-        let panel = NSOpenPanel()
-        panel.message = "Tempo needs access to your home directory to detect your Claude account."
-        panel.prompt = "Grant Access"
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
-
-        panel.begin { [weak self] response in
-            guard let self, response == .OK, let url = panel.url else { return }
-            if let data = try? url.bookmarkData(
-                options: .withSecurityScope,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            ) {
-                BookmarkKeychainStore.saveBookmark(data: data, account: "homeFolder")
-                needsHomeAccessGrant = false
-            }
-            Task { await self.load() }
-        }
     }
 
     // MARK: - Computed: 7-day window
@@ -410,7 +416,6 @@ final class ClaudeLocalDBReader {
         totalSessions = 0
         totalMessages = 0
         totalSubagents = 0
-        needsHomeAccessGrant = Self.isSandboxed && !Self.hasHomeBookmark()
     }
 
     private nonisolated static func buildFallbackStats(
