@@ -11,12 +11,15 @@ private enum KeychainKey {
 }
 
 private enum KeychainStore {
+    private static let service = "com.tenondev.tempo.claude.oauth"
+
     @discardableResult
     static func save(_ value: String, forKey key: String) -> Bool {
         let data = Data(value.utf8)
         let baseQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key
+            kSecAttrAccount as String: key,
+            kSecAttrService as String: service
         ]
         let updateStatus = SecItemUpdate(baseQuery as CFDictionary, [kSecValueData as String: data] as CFDictionary)
         if updateStatus == errSecSuccess { return true }
@@ -30,6 +33,7 @@ private enum KeychainStore {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
+            kSecAttrService as String: service,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
@@ -42,7 +46,8 @@ private enum KeychainStore {
     static func delete(key: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key
+            kSecAttrAccount as String: key,
+            kSecAttrService as String: service
         ]
         SecItemDelete(query as CFDictionary)
     }
@@ -164,12 +169,14 @@ final class AnthropicAPIClient {
         let parts = trimmed.split(separator: "#", maxSplits: 1).map(String.init)
         let code = parts[0]
 
-        if parts.count > 1 {
-            let returnedState = parts[1]
-            guard returnedState == oauthState else {
-                clearPendingOAuth()
-                throw AuthError.invalidCallback
-            }
+        guard parts.count > 1 else {
+            clearPendingOAuth()
+            throw AuthError.invalidCallback
+        }
+        let returnedState = parts[1]
+        guard returnedState == oauthState else {
+            clearPendingOAuth()
+            throw AuthError.invalidCallback
         }
 
         guard let verifier = codeVerifier else {

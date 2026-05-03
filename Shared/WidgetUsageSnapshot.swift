@@ -155,6 +155,7 @@ enum TempoWidgetSnapshotStore {
             let directory = snapshotURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try data.write(to: snapshotURL, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: snapshotURL.path)
             return true
         } catch {
             return false

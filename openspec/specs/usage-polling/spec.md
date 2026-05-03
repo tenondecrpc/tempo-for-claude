@@ -1,3 +1,9 @@
+## Purpose
+
+Define usage API polling, response mapping, and rate-limit recovery behavior.
+
+## Requirements
+
 ### Requirement: Usage polled every 15 minutes
 The **macOS** app SHALL poll `GET https://api.anthropic.com/api/oauth/usage` at a 15-minute interval while the user is authenticated. The request SHALL include `Authorization: Bearer <access_token>` and `anthropic-beta: oauth-2025-04-20` headers. The macOS app SHALL poll continuously (not gated by foreground state, since menu bar apps are always running). A poll SHALL fire immediately on successful authentication.
 
@@ -48,7 +54,7 @@ The decoded `ExtraUsage` SHALL be passed through to the returned `UsageState`.
 - **THEN** `fetchUsage()` returns a `UsageState` with `extraUsage = nil`
 
 ### Requirement: Exponential backoff on 429
-On HTTP 429, the poller SHALL back off exponentially. If a `Retry-After` header is present, that value (seconds) is used as the minimum delay. The delay SHALL be capped at 3600 seconds (1 hour). Normal 15-minute polling resumes after one successful response.
+On HTTP 429, the poller SHALL back off exponentially. If a `Retry-After` header is present, that value (seconds) is used as the delay, bounded to at least 60 seconds. If no `Retry-After` header is present, the delay doubles from the current interval. The delay SHALL be capped at 3600 seconds (1 hour). Normal 15-minute polling resumes after one successful response.
 
 #### Scenario: 429 with Retry-After header
 - **WHEN** the API returns 429 with `Retry-After: 120`

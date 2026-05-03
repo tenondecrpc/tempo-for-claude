@@ -90,7 +90,7 @@ Install the app, try it on your devices, and send feedback while features are st
 
 ```text
 macOS menu bar app
-  |- OAuth poller -> iCloud Drive (usage.json / usage-history.json)
+  |- Tempo OAuth / fresh Claude Code CLI fallback -> usage poller -> iCloud Drive (usage.json / usage-history.json)
   |- Claude local session reader -> iCloud Drive (latest.json)
   └- Local Claude stats -> macOS detail window
 
@@ -107,6 +107,8 @@ Two independent data pipelines run in parallel:
 | **Claude local data** (`~/.claude/`) | 20-second poll | Session completion events, per-session tokens/duration, local activity stats |
 
 The OAuth API is the authoritative source for utilization - the plan limit is account-specific and never exposed locally. Claude local data powers session completion alerts and richer local stats in the current repo.
+
+Tempo stores its own OAuth credentials in Keychain and uses them as the preferred source for usage polling. A fresh Claude Code CLI access token may be used as a read-only fallback, but Tempo never refreshes, writes, or deletes Claude Code's own credentials. See [`docs/AUTH_FLOW.md`](docs/AUTH_FLOW.md) for the exact auth source order.
 
 ## Privacy and data handling
 
@@ -131,7 +133,7 @@ The OAuth API is the authoritative source for utilization - the plan limit is ac
 1. Open `Tempo.xcodeproj` in Xcode
 2. Use a signing team that supports the committed iCloud container and widget app-group entitlements
 3. Build and run the macOS target, then grant access to `~/.claude` when Tempo asks for local Claude Code stats
-4. Sign in with your Claude account via OAuth - the app opens a browser and lets you paste the authorization code
+4. Sign in with your Claude account. Tempo first restores its own Keychain OAuth credentials, may use a fresh Claude Code CLI access token as a read-only fallback, and otherwise opens the OAuth browser flow for a paste-code sign-in.
 5. Launch the iOS and watch targets on physical devices if you want live iCloud sync and WatchConnectivity verification
 
 ## Requirements

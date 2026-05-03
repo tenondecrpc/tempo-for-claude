@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Define the macOS welcome window and sign-in entry behavior.
+
+## Requirements
 
 ### Requirement: Welcome window opens from menu bar Sign In
 A separate macOS window (SwiftUI `Window` scene, id "welcome") SHALL open when the user clicks "Sign In" in the menu bar popover. Clicking Sign In SHALL also close the menu bar popover synchronously before opening the window. The window SHALL be centered on screen, approximately 600×500pt, with a dark background using `TempoTheme.background`.
@@ -26,15 +30,23 @@ The window SHALL display:
 - **WHEN** the Welcome window is displayed
 - **THEN** the preview shows hardcoded concentric rings at ~49% session (inner, violet) and ~4% weekly (outer, blue)
 
-### Requirement: Sign in with Claude Code checks existing credentials first
-The "Sign in with Claude Code" button SHALL first attempt to restore a session from stored credentials (including token refresh). Only if no valid credentials exist SHALL it initiate the OAuth PKCE browser flow. While checking, the button SHALL show a spinner for a minimum of 2 seconds before proceeding.
+### Requirement: Sign in with Claude Code restores safe credentials first
+The "Sign in with Claude Code" button SHALL first attempt `tryRestoreSession()`. Restore SHALL prefer Tempo OAuth credentials from Keychain, refresh only Tempo OAuth credentials if needed, and may use a fresh Claude Code CLI access token as a read-only fallback. If no valid Tempo OAuth credentials and no fresh CLI access token exist, the button SHALL initiate the OAuth PKCE browser flow. While checking, the button SHALL show a spinner for a minimum of 2 seconds before proceeding.
 
-#### Scenario: Valid credentials restore session without browser
-- **WHEN** the user clicks "Sign in with Claude Code" and valid credentials exist on disk
-- **THEN** a spinner is shown for at least 2 seconds, then the session is restored and the window closes
+#### Scenario: Valid Tempo OAuth credentials restore session without browser
+- **WHEN** the user clicks "Sign in with Claude Code" and valid Tempo OAuth credentials exist in Keychain
+- **THEN** a spinner is shown for at least 2 seconds, the session is restored as `webOAuth`, and the window closes
+
+#### Scenario: Fresh CLI access token restores session without browser
+- **WHEN** the user clicks "Sign in with Claude Code", Tempo OAuth credentials are unavailable, and Claude Code has a fresh CLI access token
+- **THEN** a spinner is shown for at least 2 seconds, the session is restored as `cliSession`, and the window closes
+
+#### Scenario: Expired CLI token does not restore session
+- **WHEN** the user clicks "Sign in with Claude Code" and the only available Claude Code CLI token is expired
+- **THEN** Tempo does not refresh Claude Code credentials and proceeds to the OAuth PKCE browser flow
 
 #### Scenario: No credentials triggers OAuth flow
-- **WHEN** the user clicks "Sign in with Claude Code" and no valid credentials exist
+- **WHEN** the user clicks "Sign in with Claude Code" and no valid Tempo OAuth credentials or fresh CLI access token exist
 - **THEN** after the spinner, the OAuth PKCE authorization URL is opened in the default browser
 
 ### Requirement: Sign in with Email button is a disabled placeholder

@@ -4,15 +4,13 @@ Define how the macOS app polls usage and publishes durable usage snapshots for i
 
 ## Requirements
 
-### Requirement: Usage polled every 30 minutes on macOS
-The macOS app SHALL poll `GET https://api.anthropic.com/api/oauth/usage` at a **30-minute** interval while the user is authenticated. The request SHALL include `Authorization: Bearer <access_token>` and `anthropic-beta: oauth-2025-04-20` headers. A poll SHALL fire immediately on successful authentication.
-
-> **Rate-limit finding (2026-03-28):** A 15-minute default interval reliably triggers HTTP 429 from Anthropic on this endpoint during normal use. The minimum safe interval observed in production is **30 minutes**. The interval MUST NOT be lowered below 30 minutes in any configuration. Manual one-off refreshes (user-initiated) are acceptable and are not affected by this constraint.
+### Requirement: Usage polled every 15 minutes on macOS
+The macOS app SHALL poll `GET https://api.anthropic.com/api/oauth/usage` at a **15-minute** interval after a successful poll while the user is authenticated. The request SHALL include `Authorization: Bearer <access_token>` and `anthropic-beta: oauth-2025-04-20` headers. A poll SHALL fire immediately on successful authentication.
 
 The poller SHALL expose the latest `UsageState` as an observable property (`latestUsage: UsageState?`) so that SwiftUI views can reactively display current usage data without additional iCloud reads.
 
 #### Scenario: Poll fires on schedule
-- **WHEN** 30 minutes elapse since the last successful poll
+- **WHEN** 15 minutes elapse since the last successful poll
 - **THEN** the app issues a new `GET /api/oauth/usage` request
 
 #### Scenario: Poll fires immediately after sign-in
@@ -46,7 +44,7 @@ If the API response omits `resets_at` (null or missing), the poller SHALL retain
 - **THEN** the written `UsageState.resetAt5h` retains the previous value
 
 ### Requirement: Exponential backoff on 429
-On HTTP 429, the poller SHALL back off exponentially. If a `Retry-After` header is present, that value (seconds) is used as the minimum delay. The delay SHALL be capped at 3600 seconds. Normal 30-minute polling resumes after one successful response.
+On HTTP 429, the poller SHALL back off exponentially. If a `Retry-After` header is present, that value (seconds) is used as the delay, bounded to at least 60 seconds. If no `Retry-After` header is present, the delay doubles from the current interval. The delay SHALL be capped at 3600 seconds. Normal 15-minute polling resumes after one successful response.
 
 #### Scenario: 429 with Retry-After header
 - **WHEN** the API returns 429 with `Retry-After: 120`
@@ -54,14 +52,18 @@ On HTTP 429, the poller SHALL back off exponentially. If a `Retry-After` header 
 
 #### Scenario: Recovery after 429
 - **WHEN** a poll after backoff returns 200
-- **THEN** the polling interval resets to 30 minutes
+- **THEN** the polling interval resets to 15 minutes
 
-### Requirement: Credentials file updated after token refresh
-When the poller triggers a token refresh (due to 401 or expiry), the new credentials SHALL be written back to `~/.config/tempo-for-claude/credentials.json` before retrying the API call.
+### Requirement: Tempo OAuth credentials updated after token refresh
+When the poller triggers a Tempo OAuth token refresh due to a 401 or expiry, the new Tempo OAuth credentials SHALL be written back to the macOS Keychain before retrying the API call. Claude Code CLI credentials SHALL NOT be refreshed or written by Tempo.
 
-#### Scenario: Credentials file updated after refresh
+#### Scenario: Keychain credentials updated after Tempo OAuth refresh
 - **WHEN** a token refresh succeeds during polling
-- **THEN** `credentials.json` is updated with the new `access_token` and `expiresAt`
+- **THEN** the Tempo OAuth Keychain item is updated with the new `access_token` and `expiresAt`
+
+#### Scenario: CLI credentials are not refreshed
+- **WHEN** a request using Claude Code CLI credentials returns 401
+- **THEN** Tempo does not use Claude Code's refresh token and does not write to the Claude Code Keychain item
 
 ### Requirement: macOS writes widget snapshot after successful usage polls
 After a successful macOS usage poll, the app SHALL derive a widget snapshot from the latest `UsageState` and write it to shared App Group storage for the macOS widget extension.

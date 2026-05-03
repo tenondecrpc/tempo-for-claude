@@ -43,6 +43,7 @@ final class MacAppCoordinator {
 
         client.onSignOut = { [weak self] in
             self?.poller.stop()
+            self?.poller.resetAuthenticationBackoff(clearUsage: true)
             self?.serviceStatusMonitor.stop()
             self?.isDemoMode = false
         }
@@ -86,12 +87,14 @@ final class MacAppCoordinator {
         guard !authState.requiresExplicitSignIn else { return }
         let restored = await client.tryRestoreSession()
         if restored {
+            poller.resetAuthenticationBackoff()
             poller.start()
             updateServiceStatusMonitoring()
         }
     }
 
     func onAuthenticated() {
+        poller.resetAuthenticationBackoff()
         poller.start()
         updateServiceStatusMonitoring()
     }

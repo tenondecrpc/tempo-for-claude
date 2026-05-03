@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Security
 
 // MARK: - Models
 
@@ -97,6 +98,61 @@ nonisolated private struct JNLContentBlock: Decodable {
     let type: String
 }
 
+// MARK: - BookmarkKeychainStore
+
+/// Stores security-scoped bookmarks in the macOS Keychain instead of UserDefaults.
+private enum BookmarkKeychainStore {
+    nonisolated private static let service = "com.tenondev.tempo.claude.bookmarks"
+
+    nonisolated static func saveBookmark(data: Data, account: String) {
+        let baseQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        let updateStatus = SecItemUpdate(
+            baseQuery as CFDictionary,
+            [kSecValueData as String: data] as CFDictionary
+        )
+        if updateStatus == errSecSuccess { return }
+        var addQuery = baseQuery
+        addQuery[kSecValueData as String] = data
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        SecItemAdd(addQuery as CFDictionary, nil)
+    }
+
+    nonisolated static func loadBookmark(account: String) -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return data
+    }
+
+    nonisolated static func deleteBookmark(account: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    /// Migrates a bookmark from UserDefaults to Keychain if present.
+    nonisolated static func migrateIfNeeded(defaultsKey: String, account: String) {
+        guard BookmarkKeychainStore.loadBookmark(account: account) == nil,
+              let data = UserDefaults.standard.data(forKey: defaultsKey) else { return }
+        saveBookmark(data: data, account: account)
+        UserDefaults.standard.removeObject(forKey: defaultsKey)
+    }
+}
+
 // MARK: - ClaudeLocalDBReader
 
 @Observable
@@ -157,7 +213,7 @@ final class ClaudeLocalDBReader {
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
             ) {
-                UserDefaults.standard.set(data, forKey: Self.bookmarkKey)
+                BookmarkKeychainStore.saveBookmark(data: data, account: "claudeFolder")
             }
             needsAccessGrant = false
             Task { await self.load() }
@@ -167,7 +223,8 @@ final class ClaudeLocalDBReader {
     // MARK: - Bookmark Resolution
 
     nonisolated static func resolveBookmarkedClaudeURL() -> URL? {
-        guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return nil }
+        BookmarkKeychainStore.migrateIfNeeded(defaultsKey: bookmarkKey, account: "claudeFolder")
+        guard let data = BookmarkKeychainStore.loadBookmark(account: "claudeFolder") else { return nil }
         var isStale = false
         guard let url = try? URL(
             resolvingBookmarkData: data,
@@ -180,7 +237,7 @@ final class ClaudeLocalDBReader {
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         ) {
-            UserDefaults.standard.set(fresh, forKey: bookmarkKey)
+            BookmarkKeychainStore.saveBookmark(data: fresh, account: "claudeFolder")
         }
         return url
     }
@@ -206,7 +263,8 @@ final class ClaudeLocalDBReader {
     // MARK: - Home Directory Bookmark
 
     nonisolated static func resolveHomeBookmarkURL() -> URL? {
-        guard let data = UserDefaults.standard.data(forKey: homeBookmarkKey) else { return nil }
+        BookmarkKeychainStore.migrateIfNeeded(defaultsKey: homeBookmarkKey, account: "homeFolder")
+        guard let data = BookmarkKeychainStore.loadBookmark(account: "homeFolder") else { return nil }
         var isStale = false
         guard let url = try? URL(
             resolvingBookmarkData: data,
@@ -219,7 +277,7 @@ final class ClaudeLocalDBReader {
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         ) {
-            UserDefaults.standard.set(fresh, forKey: homeBookmarkKey)
+            BookmarkKeychainStore.saveBookmark(data: fresh, account: "homeFolder")
         }
         return url
     }
@@ -262,7 +320,7 @@ final class ClaudeLocalDBReader {
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
             ) {
-                UserDefaults.standard.set(data, forKey: Self.homeBookmarkKey)
+                BookmarkKeychainStore.saveBookmark(data: data, account: "homeFolder")
                 needsHomeAccessGrant = false
             }
             Task { await self.load() }
