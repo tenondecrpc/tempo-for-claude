@@ -108,8 +108,21 @@ private enum BookmarkKeychainStore {
         let data: Data?
     }
 
-    private static let cacheLock = NSLock()
-    private static var cache: [String: CacheEntry] = [:]
+    private struct ResolvedURLCacheEntry {
+        let url: URL
+        let resolvedAt: Date
+    }
+
+    nonisolated private final class CacheStore {
+        let lock = NSLock()
+        var entries: [String: CacheEntry] = [:]
+        var resolvedURLs: [String: ResolvedURLCacheEntry] = [:]
+    }
+
+    /// How long a resolved bookmark URL is considered fresh.
+    nonisolated private static let resolvedURLCacheTTL: TimeInterval = 60
+
+    nonisolated private static let cacheStore = CacheStore()
 
     nonisolated static func saveBookmark(data: Data, account: String) {
         DevLog.trace("BookmarkTrace", "Saving bookmark account=\(account) bytes=\(data.count)")
@@ -138,9 +151,9 @@ private enum BookmarkKeychainStore {
     }
 
     nonisolated static func loadBookmark(account: String) -> Data? {
-        cacheLock.lock()
-        if let entry = cache[account] {
-            cacheLock.unlock()
+        cacheStore.lock.lock()
+        if let entry = cacheStore.entries[account] {
+            cacheStore.lock.unlock()
             DevLog.trace("BookmarkTrace", "Bookmark load served from cache account=\(account) hasData=\(entry.data != nil)")
             return entry.data
         }
@@ -158,28 +171,28 @@ private enum BookmarkKeychainStore {
         switch status {
         case errSecSuccess:
             guard let data = result as? Data else {
-                cache[account] = CacheEntry(data: nil)
-                cacheLock.unlock()
+                cacheStore.entries[account] = CacheEntry(data: nil)
+                cacheStore.lock.unlock()
                 DevLog.trace("BookmarkTrace", "Bookmark load returned non-data result account=\(account)")
                 return nil
             }
-            cache[account] = CacheEntry(data: data)
-            cacheLock.unlock()
+            cacheStore.entries[account] = CacheEntry(data: data)
+            cacheStore.lock.unlock()
             DevLog.trace("BookmarkTrace", "Loaded bookmark account=\(account) bytes=\(data.count)")
             return data
         case errSecItemNotFound:
-            cache[account] = CacheEntry(data: nil)
-            cacheLock.unlock()
+            cacheStore.entries[account] = CacheEntry(data: nil)
+            cacheStore.lock.unlock()
             DevLog.trace("BookmarkTrace", "Bookmark not found account=\(account)")
             return nil
         case errSecUserCanceled, errSecAuthFailed:
-            cache[account] = CacheEntry(data: nil)
-            cacheLock.unlock()
+            cacheStore.entries[account] = CacheEntry(data: nil)
+            cacheStore.lock.unlock()
             DevLog.trace("BookmarkTrace", "Bookmark load denied or canceled account=\(account) status=\(status)")
             return nil
         default:
-            cache[account] = CacheEntry(data: nil)
-            cacheLock.unlock()
+            cacheStore.entries[account] = CacheEntry(data: nil)
+            cacheStore.lock.unlock()
             DevLog.trace("BookmarkTrace", "Bookmark load failed account=\(account) status=\(status)")
             return nil
         }
@@ -213,16 +226,34 @@ private enum BookmarkKeychainStore {
         DevLog.trace("BookmarkTrace", "Migrated bookmark from UserDefaults to Keychain account=\(account)")
     }
 
-    private static func storeCachedBookmark(_ data: Data?, account: String) {
-        cacheLock.lock()
-        cache[account] = CacheEntry(data: data)
-        cacheLock.unlock()
+    nonisolated private static func storeCachedBookmark(_ data: Data?, account: String) {
+        cacheStore.lock.lock()
+        cacheStore.entries[account] = CacheEntry(data: data)
+        cacheStore.resolvedURLs.removeValue(forKey: account)
+        cacheStore.lock.unlock()
     }
 
-    private static func clearCachedBookmark(account: String) {
-        cacheLock.lock()
-        cache.removeValue(forKey: account)
-        cacheLock.unlock()
+    nonisolated private static func clearCachedBookmark(account: String) {
+        cacheStore.lock.lock()
+        cacheStore.entries.removeValue(forKey: account)
+        cacheStore.resolvedURLs.removeValue(forKey: account)
+        cacheStore.lock.unlock()
+    }
+
+    nonisolated fileprivate static func cachedResolvedURL(for account: String) -> URL? {
+        cacheStore.lock.lock()
+        defer { cacheStore.lock.unlock() }
+        guard let entry = cacheStore.resolvedURLs[account],
+              Date().timeIntervalSince(entry.resolvedAt) < resolvedURLCacheTTL else {
+            return nil
+        }
+        return entry.url
+    }
+
+    nonisolated fileprivate static func storeCachedResolvedURL(_ url: URL, account: String) {
+        cacheStore.lock.lock()
+        cacheStore.resolvedURLs[account] = ResolvedURLCacheEntry(url: url, resolvedAt: Date())
+        cacheStore.lock.unlock()
     }
 }
 
@@ -287,6 +318,11 @@ final class ClaudeLocalDBReader {
     // MARK: - Bookmark Resolution
 
     nonisolated static func resolveBookmarkedClaudeURL() -> URL? {
+        if let cached = BookmarkKeychainStore.cachedResolvedURL(for: "claudeFolder") {
+            DevLog.trace("BookmarkTrace", "Resolved Claude folder bookmark served from cache")
+            return cached
+        }
+
         DevLog.trace("BookmarkTrace", "Resolving Claude folder bookmark")
         BookmarkKeychainStore.migrateIfNeeded(defaultsKey: bookmarkKey, account: "claudeFolder")
         guard let data = BookmarkKeychainStore.loadBookmark(account: "claudeFolder") else { return nil }
@@ -308,6 +344,7 @@ final class ClaudeLocalDBReader {
             DevLog.trace("BookmarkTrace", "Claude folder bookmark is stale; saving refreshed bookmark")
             BookmarkKeychainStore.saveBookmark(data: fresh, account: "claudeFolder")
         }
+        BookmarkKeychainStore.storeCachedResolvedURL(url, account: "claudeFolder")
         DevLog.trace("BookmarkTrace", "Resolved Claude folder bookmark isStale=\(isStale)")
         return url
     }
