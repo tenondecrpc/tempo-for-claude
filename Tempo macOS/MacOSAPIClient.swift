@@ -88,12 +88,6 @@ struct DetectedClaudeAccount {
             return account
         }
 
-        if let account = try? ClaudeLocalDBReader.withHomeDirectoryAccess({ homeDir in
-            readAccount(from: homeDir.appendingPathComponent(".claude.json"))
-        }) {
-            return account
-        }
-
         return nil
     }
 
